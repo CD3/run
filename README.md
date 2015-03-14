@@ -23,3 +23,5 @@ Planned Handlers
  - xjobs
  - pexec
 
+Note that `run` does not doe load ballancing. Each handler is given the list of commands to run, and they are responsible
+for managing the system workload.

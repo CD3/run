@@ -63,7 +63,7 @@ sub usage()
 my $me = basename($0);
 print $me." - $version\n";
 print <<'EOF';
-Run a command, using scheduler if possible.
+Run a set of commands, using scheduler if possible.
 
 usage: $me cmd1 [args] [: cmd2 [args] [...] ]
 
