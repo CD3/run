@@ -66,7 +66,7 @@ sub time_cmd {
 
     if( @lines > 0 )
     {
-      $times{$file} = {interval=>{begin=>0, end=>1}, total=>0};
+      $times{$file} = {interval=>{begin=>0, end=>0}, total=>0};
     }
     for my $line (@lines)
     {
@@ -82,8 +82,15 @@ sub time_cmd {
     my $begin = `date +%s --date='$interval->{begin}'`;
     my $end   = `date +%s --date='$interval->{end}'`;
     my $diff = $end - $begin;
-    $interval->{duration} = $diff;
-    $times{$file}->{total} += $diff;
+    if( $diff < 0 )
+    {
+      $interval->{duration} = "unfinished";
+    }
+    else
+    {
+      $interval->{duration} = $diff;
+      $times{$file}->{total} += $diff;
+    }
   }
 
 
@@ -91,7 +98,14 @@ sub time_cmd {
   my $fnw = max(map {length($_)} keys(%times));
   for my $file (keys(%times))
   {
-    printf("%-${fnw}s : %s s\n" , $file, $times{$file}->{total});
+    if( $times{$file}->{interval}->{duration} =~ /unfinished/ )
+    {
+      printf("%-${fnw}s : unfinished\n" , $file);
+    }
+    else
+    {
+      printf("%-${fnw}s : %s s\n" , $file, $times{$file}->{total});
+    }
   }
 
 
