@@ -1,4 +1,4 @@
-DESTDIR=/usr/local/
+DESTDIR=${HOME}
 
 install:
 	mkdir -p $(DESTDIR)/bin
