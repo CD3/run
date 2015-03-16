@@ -119,7 +119,7 @@ sub build_skel_script
   push @lines, "echo -n 'Start: '";
   push @lines , "date +%Y%m%d%H%M%S\n";
   push @lines, $CMD."\n";
-  push @lines, "echo -n 'End: '";
+  push @lines, "echo -n 'End:   '";
   push @lines , "date +%Y%m%d%H%M%S\n";
 
   return @lines;
