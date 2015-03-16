@@ -6,7 +6,6 @@ use Getopt::Std;
 use Cwd;
 use List::Util qw/max/;
 
-use Data::Dumper;
 
 #       _       _           _                       
 #  __ _| | ___ | |__   __ _| | __   ____ _ _ __ ___ 
@@ -49,6 +48,12 @@ sub cmd_exists
   my $e = system("which $cmd > /dev/null 2>&1");
 
   return !$e;
+}
+
+sub import_optional_packages
+{
+  require Data::Dumper;
+  Data::Dumper->import();
 }
 
 #                                               _     
@@ -161,6 +166,12 @@ $verbose_level = $opt_v if ($opt_v);
 $verbose_level = 100    if ($debug);
 
 
+if( $debug )
+{
+  import_optional_packages();
+}
+
+
 $cmd_str = shift;
 
 
@@ -188,8 +199,6 @@ else
  usage();
  exit(1);
 }
-
-
 
 exit(0);
 
