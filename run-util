@@ -33,7 +33,14 @@ my $me = basename($0);
 print $me." - $version\n";
 print <<'EOF';
 A set of useful utilities for working with the run command.
+
+commands:
 EOF
+
+for $cmd (keys(%commands) )
+{
+  printf( "\t%-".(max(map{length}keys(%commands)))."s - %s\n", $cmd, $commands{$cmd}{help});
+}
 }
 
 sub cmd_exists
@@ -115,10 +122,10 @@ sub clean_cmd {
   print "clean - comming soon\n";
 }
 
-my %commands  = (
-                  time  => { func => \&time_cmd,  help => "collect information about run times." },
-                  clean => { func => \&clean_cmd, help => "clean files created by the run command." },
-                );
+%commands  = (
+               time  => { func => \&time_cmd,  help => "collect information about run times." },
+               clean => { func => \&clean_cmd, help => "clean files created by the run command." },
+             );
 
 
 
