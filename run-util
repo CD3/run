@@ -148,7 +148,34 @@ sub time_cmd {
 }
 
 sub clean_cmd {
-  print "clean - comming soon\n";
+  
+  our($opt_n);
+  getopt();
+
+  # remove any stdout files that the run command has generated.
+  #
+  #
+  # first, get a list of the files that have the correct name.
+  opendir(DIR,".");
+  my @files = grep(/^_.*\.o[0-9]+$/, readdir(DIR) );
+  closedir(DIR);
+
+  # now check that these files actually are stdout files
+  for my $file (@files)
+  {
+    open(FILE, "<$file");
+    my @matches = grep(/CMD|BEGIN|END/, <FILE>);
+    close(FILE);
+
+    if( $opt_n )
+    {
+      print("rm $file\n") if( @matches > 2 );
+    }
+    else
+    {
+      system("rm $file\n") if( @matches > 2 );
+    }
+  }
 }
 
 %commands  = (
