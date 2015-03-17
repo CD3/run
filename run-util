@@ -149,8 +149,18 @@ sub time_cmd {
 
 sub clean_cmd {
   
-  our($opt_n);
+  our($opt_x,
+      $opt_h);
   getopt();
+
+  if( $opt_h )
+  {
+    print <<'EOF';
+    options:
+      -x        execute the cleaning action. by default, clean performs a 'dry run'
+EOF
+    return;
+  }
 
   # remove any stdout files that the run command has generated.
   #
@@ -167,13 +177,13 @@ sub clean_cmd {
     my @matches = grep(/CMD|BEGIN|END/, <FILE>);
     close(FILE);
 
-    if( $opt_n )
+    if( $opt_x )
     {
-      print("rm $file\n") if( @matches > 2 );
+      system("rm $file\n") if( @matches > 2 );
     }
     else
     {
-      system("rm $file\n") if( @matches > 2 );
+      print("rm $file\n") if( @matches > 2 );
     }
   }
 }
