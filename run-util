@@ -81,7 +81,7 @@ sub time_cmd {
 
   # first we get all files that could be a stdout file from the run command
   opendir(DIR,".");
-  my @files = grep(/^_.*\.o[0-9]+$/, readdir(DIR) );
+  my @files = grep(/^.*\.o[0-9]+$/, readdir(DIR) );
   closedir(DIR);
 
   # now get the timing data out of each file
@@ -157,7 +157,7 @@ sub clean_cmd {
   #
   # first, get a list of the files that have the correct name.
   opendir(DIR,".");
-  my @files = grep(/^_.*\.o[0-9]+$/, readdir(DIR) );
+  my @files = grep(/^.*\.o[0-9]+$/, readdir(DIR) );
   closedir(DIR);
 
   # now check that these files actually are stdout files
