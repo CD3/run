@@ -64,59 +64,83 @@ sub import_optional_packages
                                                      
 
 sub time_cmd {
+  # we are going to go through all stdout files and build a tree of timing data
+  # that we will then report.
+  # each file contains the output of one or more jobs. each job will have a command, begin time and end time.
+  #
+  # the tree will be structures as follows:
+  #
+  # file :
+  #   duration : XX
+  #   jobs  :
+  #     - begin : XX
+  #       end : XX
+  #       duration : XX
+  #       cmd : XX
+
+
+  # first we get all files that could be a stdout file from the run command
   opendir(DIR,".");
   my @files = grep(/^_.*\.o[0-9]+$/, readdir(DIR) );
   closedir(DIR);
 
+  # now get the timing data out of each file
   my %times= ();
   for my $file (@files)
   {
-
     open(FILE, "<$file");
-    my @lines = grep(/Begin|End/, <FILE>);
+    my @alllines = <FILE>;
     close(FILE);
+
+    # get all CMD,BEGIN, and END lines
+    my @lines = grep(/CMD|BEGIN|END/, @alllines);
 
     if( @lines > 0 )
     {
-      $times{$file} = {interval=>{begin=>0, end=>0}, total=>0};
+      $times{$file} = { duration => 0, jobs => [] };
     }
+
     for my $line (@lines)
     {
-      $times{$file}->{interval}->{begin} = $1 if( $line =~ /Begin:\s*([0-9 :]+)/ );
-      $times{$file}->{interval}->{end}   = $1 if( $line =~ /End:\s*([0-9 :]+)/ );
+      if( $line =~ /CMD:\s*(.+)/ )
+      {
+        push @{$times{$file}->{jobs}}, {cmd=>$1, begin=>0, end=>0, duration=>0};
+      }
+
+      if( $line =~ /BEGIN:\s*([0-9 :]+)/ )
+      {
+        $times{$file}->{jobs}->[-1]->{begin}    = $1;
+      }
+
+      if( $line =~ /END:\s*([0-9 :]+)/ )
+      {
+        $times{$file}->{jobs}->[-1]->{end}      = $1;
+
+        $times{$file}->{jobs}->[-1]->{duration} = `date +%s --date='$times{$file}->{jobs}->[-1]->{end}'`
+                                                - `date +%s --date='$times{$file}->{jobs}->[-1]->{begin}'`;
+
+        if( $times{$file}->{jobs}->[-1]->{duration} < 0 )
+        {
+          $times{$file}->{jobs}->[-1]->{duration} = "unfinished";
+        }
+        else
+        {
+          $times{$file}->{duration} += $times{$file}->{jobs}->[-1]->{duration}
+        }
+
+      }
     }
   }
-
-  for my $file (keys(%times))
-  {
-    my $interval = $times{$file}->{interval};
-
-    my $begin = `date +%s --date='$interval->{begin}'`;
-    my $end   = `date +%s --date='$interval->{end}'`;
-    my $diff = $end - $begin;
-    if( $diff < 0 )
-    {
-      $interval->{duration} = "unfinished";
-    }
-    else
-    {
-      $interval->{duration} = $diff;
-      $times{$file}->{total} += $diff;
-    }
-  }
-
 
 
   my $fnw = max(map {length($_)} keys(%times));
+
   for my $file (keys(%times))
   {
-    if( $times{$file}->{interval}->{duration} =~ /unfinished/ )
+    printf("%-${fnw}s: %s s\n", $file, $times{$file}->{duration});
+    for my $job (@{$times{$file}->{jobs}})
     {
-      printf("%-${fnw}s : unfinished\n" , $file);
-    }
-    else
-    {
-      printf("%-${fnw}s : %s s\n" , $file, $times{$file}->{total});
+      printf("%-${fnw}s : %s s\n" , "\t".$job->{cmd}, $job->{duration});
     }
   }
 

@@ -73,11 +73,12 @@ sub build_skel_script
 
   push @lines, $shebang."\n";
   push @lines, "cd ".getcwd()."\n";
-  push @lines, "echo -n 'Begin: '";
-  push @lines , "date +'$date_fmt'\n";
-  push @lines, $CMD."\n";
-  push @lines, "echo -n 'End:   '";
-  push @lines , "date +'$date_fmt'\n";
+  push @lines, "echo 'CMD: $CMD'\n";
+  push @lines, "echo -n 'BEGIN: '";
+  push @lines, "date +'$date_fmt'\n";
+  push @lines, "$CMD\n";
+  push @lines, "echo -n 'END:   '";
+  push @lines, "date +'$date_fmt'\n";
 
   return @lines;
 }
@@ -238,7 +239,7 @@ sub gnuparallel {
       {
         $i = $i+1;
         my $stdoutfn = "_run-".$names[$i-1].".o".${i};
-        system("mv $file $stdoutfn");
+        system("cat $file >> $stdoutfn");
       }
     }
     else
@@ -284,7 +285,7 @@ sub serial {
     system("chmod +x ".$scriptfn);
 
     my $stdoutfn = "_run-${name}.o${cmdi}";
-    my $cmd_to_run  = $scriptfn . ($opt_o ? " > ${stdoutfn}" : "" );
+    my $cmd_to_run  = $scriptfn . ($opt_o ? " >> ${stdoutfn}" : "" );
 
     system($cmd_to_run     ) if( not $opt_n );
     print( $cmd_to_run."\n") if(     $opt_n );
