@@ -39,6 +39,9 @@ $version = '0.1.0';
            , 'cwd'   => { 'SGE'  => '#$ -cwd'
                         , 'PBS'  => ''
                         , 'MOAB' => '' }
+           , 'mergeout'   => { 'SGE'  => '#$ -j y'
+                             , 'PBS'  => ''
+                             , 'MOAB' => '' }
              );
 
 $shebang = "#! ".`which bash`;
@@ -178,6 +181,7 @@ sub qsub {
     push @conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, "10:00:00");
     push @conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash");
     push @conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
+    push @conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
 
     splice @lines, 1, 0, @conf;
 
