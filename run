@@ -52,6 +52,10 @@ $arg_delim = ":";
 
 $date_fmt = "%Y%m%d %H:%M:%S";
 
+$script_prefix = "run_script-";
+$script_suffix = ".sh";
+
+
 #           _                     _   _                 
 # ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 
 #/ __| | | | '_ \| '__/ _ \| | | | __| | '_ \ / _ \/ __|
@@ -88,7 +92,7 @@ sub build_skel_script
 
 sub write_script
 {
-  my    $scriptfn = $tempdir."/run_script-${cmdi}.sh";
+  my    $scriptfn = "${tempdir}/${script_prefix}${cmdi}${script_suffix}";
   open( $scriptfh,">".$scriptfn) or die "could not write submit script to temp file";
   print $scriptfh join( "\n", @_ )."\n";
   close($scriptfh);
@@ -136,6 +140,55 @@ sub message
 # \__, |___/\__,_|_.__/ 
 #    |_|                
 
+sub qsub_generate_scripts {
+  # we need ot figure out what scheduler is running so we can create the correct
+  # script
+  my $scheduler = "UNKNOWN";
+
+  $scheduler = "PBS"  if( cmd_exists( "pbsnodes" ) );
+  $scheduler = "MOAB" if( cmd_exists( "moabnodes" ) );
+  $scheduler = "SGE"  if( cmd_exists( "sge_qmaster" ) );
+
+  message( 1, "Scheduler detected: $scheduler");
+
+  my @scripts = ();
+
+  $cmdi = 0;
+  for $CMD (@_)
+  {
+    $cmdi = $cmdi+1;
+
+    # generate the script that we will submit.
+    my @lines = build_skel_script( $CMD );
+    my @scheduler_conf = ();
+
+    my $name = generate_name_for_cmd($CMD);
+
+    push @scheduler_conf, sprintf( $scheduler_templates{name    }->{$scheduler}, $name );
+    push @scheduler_conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, $walltime );
+    push @scheduler_conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash" );
+    push @scheduler_conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
+    push @scheduler_conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
+
+    # add the scheduler configuration after the shebang, but before everything else
+    splice @lines, 1, 0, @scheduler_conf;
+
+    push @scripts, write_script( @lines );
+
+  }
+
+  return @scripts;
+}
+
+sub qsub_run_scripts {
+
+  for my $scriptfn (@_)
+  {
+    system("qsub ".$scriptfn     ) if( not $opt_n );
+    print( "qsub ".$scriptfn."\n") if(     $opt_n );
+  }
+}
+
 sub qsub {
   if( scalar @_ == 0 ) {
     # first of all, the qsub command needs to exist
@@ -155,42 +208,20 @@ sub qsub {
     return 1;
   }
 
-  # we need ot figure out what scheduler is running so we can create the correct
-  # script
-  my $scheduler = "UNKNOWN";
-
-  $scheduler = "PBS"  if( cmd_exists( "pbsnodes" ) );
-  $scheduler = "MOAB" if( cmd_exists( "moabnodes" ) );
-  $scheduler = "SGE"  if( cmd_exists( "sge_qmaster" ) );
-
-  message( 1, "Scheduler detected: $scheduler");
-
-
-  $cmdi = 0;
-  for $CMD (@_)
+  # generate all the scripts first
+  # generate all the scripts first
+  if( $opt_F )
   {
-    $cmdi = $cmdi+1;
-
-    # generate the script that we will submit.
-    my @lines = build_skel_script( $CMD );
-    my @conf = ();
-
-    my $name = generate_name_for_cmd($CMD);
-
-    push @conf, sprintf( $scheduler_templates{name    }->{$scheduler}, $name );
-    push @conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, $walltime );
-    push @conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash" );
-    push @conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
-    push @conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
-
-    splice @lines, 1, 0, @conf;
-
-    my $scriptfn = write_script( @lines );
-
-    system("qsub ".$scriptfn     ) if( not $opt_n );
-    print( "qsub ".$scriptfn."\n") if(     $opt_n );
-
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
   }
+  else
+  {
+    @scripts = qsub_generate_scripts(@_);
+  }
+
+  # now run them
+  qsub_run_scripts(@scripts);
 }
 
 
@@ -201,20 +232,13 @@ sub qsub {
 # \__, |_| |_|\__,_| | .__/ \__,_|_|  \__,_|_|_|\___|_|
 # |___/              |_|                               
 
-sub gnuparallel {
-  if( scalar @_ == 0 ) {
-    return cmd_exists('parallel');
-  }
+sub gnuparallel_generate_scripts {
 
   my @scripts = ();
   $cmdi = 0;
-
-  my @names = ();
   for $CMD (@_)
   {
     $cmdi = $cmdi+1;
-
-    push @names, generate_name_for_cmd($CMD);
 
     my @lines = build_skel_script( $CMD );
     my $scriptfn = write_script( @lines );
@@ -222,9 +246,24 @@ sub gnuparallel {
     push @scripts, $scriptfn;
   }
 
+  return @scripts;
+}
 
-  my $cmd_to_run  = "parallel ".($opt_o ? "--files" : "" )." ::: ";
-  $cmd_to_run  .= join(" ", @scripts);
+sub gnuparallel_run_scripts {
+
+  # parallel runs a command with different arguments pulled from groups that are separated by :::
+  #
+  # parallel cmd ::: arg1 arg2 arg3
+  #
+  # if no command is given, then each argument is treated as a command ran ran
+  #
+  # parallel ::: cmd1 cmd2 cmd3
+  #
+  # if the --files option is given, then the standard output of each command is sent to a file
+  # instead of the screen. however, we don't know the name of this file before hand, parallel
+  # will print it to stdout as they are created.
+  #
+  my $cmd_to_run  = "parallel ".($opt_o ? "--files" : "" )." ::: ".join(" ", @_);
 
   if( $opt_n )
   {
@@ -239,11 +278,25 @@ sub gnuparallel {
       # we need to get this list and move these files.
       my @files = `$cmd_to_run`;
       chomp(@files);
+
       my $i = 0;
       for my $file (@files)
       {
-        $i = $i+1;
-        my $stdoutfn = "_run-".$names[$i-1].".o".${i};
+        $i++;
+
+        # the command ran in each script is printed to stdout, so we can retrieve
+        # it from each stdout file written by parallel
+        my $cmd = "UNKNOWN";
+        open(FILE, "<$file");
+        my @cmd_line = grep(/CMD:/, <FILE>);
+        close(FILE);
+        if( $cmd_line[0] =~ /^CMD:\s(.*)$/ )
+        {
+          $cmd = $1;
+        }
+
+        my $name = generate_name_for_cmd($cmd);
+        my $stdoutfn = "_run-".$name.".o".${i};
         system("cat $file >> $stdoutfn 2>&1");
       }
     }
@@ -253,6 +306,27 @@ sub gnuparallel {
       system($cmd_to_run)
     }
   }
+
+}
+
+sub gnuparallel {
+  if( scalar @_ == 0 ) {
+    return cmd_exists('parallel');
+  }
+
+  # generate all the scripts first
+  if( $opt_F )
+  {
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+  }
+  else
+  {
+    @scripts = gnuparallel_generate_scripts(@_);
+  }
+
+  # now run them
+  gnuparallel_run_scripts(@scripts);
 
 
 }
@@ -273,10 +347,8 @@ sub gnuparallel {
 #|___/\___|_|  |_|\__,_|_|
                          
 
-sub serial {
-  if( scalar @_ == 0 ) {
-    return 1; # this one will always work
-  }
+sub serial_generate_scripts {
+  my @scripts = ();
 
   $cmdi = 0;
   for $CMD (@_)
@@ -289,12 +361,56 @@ sub serial {
     my $scriptfn = write_script( @lines );
     system("chmod +x ".$scriptfn);
 
+    push @scripts, $scriptfn;
+
+  }
+
+  return @scripts;
+}
+
+sub serial_run_scripts {
+
+  $cmdi = 0;
+  for $scriptfn (@_)
+  {
+    $cmdi++;
+    # the script will echo the command that it runs, so we can easily pull out the command
+    my $cmd = "UNKNOWN";
+    open(FILE, "<$scriptfn");
+    my @cmd_line = grep(/echo 'CMD:/, <FILE>);
+    close(FILE);
+    if( $cmd_line[0] =~ /^echo 'CMD:\s(.*)'$/ )
+    {
+      $cmd = $1;
+    }
+    my $name = generate_name_for_cmd($cmd);
     my $stdoutfn = "_run-${name}.o${cmdi}";
     my $cmd_to_run  = $scriptfn . ($opt_o ? " >> ${stdoutfn}" : "" );
 
     system($cmd_to_run     ) if( not $opt_n );
     print( $cmd_to_run."\n") if(     $opt_n );
   }
+}
+
+sub serial {
+  if( scalar @_ == 0 ) {
+    return 1; # this one will always work
+  }
+
+  # generate all the scripts first
+  my @scripts = ();
+  if( $opt_F )
+  {
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+  }
+  else
+  {
+    @scripts = serial_generate_scripts(@_);
+  }
+
+  # now run them
+  serial_run_scripts(@scripts);
 
 }
 
@@ -341,7 +457,11 @@ options:
   -d DEL         use DEL to delimite commands (default '$arg_delim')
   -w HH:MM:SS    maximum walltime for jobs. this is only used for handlers that submit jobs to a scheduler.
   -o             send standard output to files. note that this is only meaningful for handlers that would normally send stdout to the screen.
+  -f             leave the generated wrapper script in the current working directory.
+  -F             treat all arguments as the names of already existing wrapper scripts and run dirrectly without generating new wrapper scripts.
 
+All handlers will first create a script wrapper for each command to run and then run this script.
+This is done so that extra information can be embedded in the command output, such as a timestamp for timing data.
 
 EXAMPLES:
 
@@ -370,14 +490,17 @@ EOF
 
 
 our(
-   $opt_h
-  ,$opt_l
-  ,$opt_H
-  ,$opt_v
-  ,$opt_D
-  ,$opt_n
-  ,$opt_o
-  ,$opt_w
+   $opt_h  # help
+  ,$opt_l  # list handlers
+  ,$opt_H  # use handler specific handler
+  ,$opt_v  # turn on verbose
+  ,$opt_V  # set verbose level
+  ,$opt_D  # debug mode
+  ,$opt_n  # dry run, don't execute commands, just 
+  ,$opt_o  # send stdout to files
+  ,$opt_w  # set walltime
+  ,$opt_f  # leave script files in current working directory
+  ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
    );
 
 getopt('HVCdw');
@@ -410,6 +533,7 @@ if($opt_l)
   exit(0);
 }
 
+$opt_d = ' ' if($opt_F);
 $arg_delim = $opt_d if($opt_d);
 
 $walltime = $opt_w  ? $opt_w : "10:00:00";
@@ -488,7 +612,14 @@ if( $debug )
     print "\t'$CMD'\n"
   }
 }
+
 $handler->{func}->(@CMDS);
+
+if( $opt_f )
+{
+  # all scripts will be in tempdir and have the script_prefix.
+  system("cp ${tempdir}/${script_prefix}*${script_suffix} ./");
+}
 
 
 exit(0);
