@@ -188,9 +188,57 @@ EOF
   }
 }
 
+sub queue_cmd {
+  
+  our($opt_x,
+      $opt_h);
+  getopt();
+
+  if( $opt_h )
+  {
+    print <<'EOF';
+    summarrizes information about the queue. requires 'qstat' command.
+
+    commands:
+      who    - print list of all users running/queueing jobs and the number of jobs they have running/queued
+      number - print the number of queued jobs
+
+    options:
+
+
+EOF
+    return;
+   }
+
+    if( not cmd_exists('qstat') )
+    {
+      print "ERROR: queue requires the 'qstat' command, which was not found\n";
+      return;
+    }
+
+    my $cmd = shift @_;
+
+    if( "who" =~ /^$cmd/ )
+    {
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | sort | uniq -c | sort' );
+    }
+
+    if( "number" =~ /^$cmd/ )
+    {
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | wc -l' );
+    }
+
+
+
+    return;
+}
+
+
+
 %commands  = (
                time  => { func => \&time_cmd,  help => "collect information about run times." },
                clean => { func => \&clean_cmd, help => "clean files created by the run command." },
+               queue => { func => \&queue_cmd, help => "print information about the queue. accepts sub-commands. run 'queue -h.' for more information" },
              );
 
 
