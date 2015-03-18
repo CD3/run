@@ -31,7 +31,7 @@ sub usage()
 my $me = basename($0);
 print $me." - $version\n";
 print <<'EOF';
-A set of useful utilities for working with the run command.
+A set of useful utilities when running jobs, particularly when using the run command.
 
 commands:
 EOF
@@ -234,11 +234,60 @@ EOF
 }
 
 
+sub BTEC_cmd {
+
+  our(
+      $opt_h ,
+    );
+  getopt();
+
+  if( $opt_h )
+  {
+    print <<'EOF';
+    Collect, analyze and report BTEC related information. This command is pretty much useless to anybody that does now
+    know what BTEC is.
+
+    commands:
+      completed  - list completed jobs
+      incomplete - list incomplete jobs
+
+    options:
+
+
+EOF
+    return;
+   }
+
+    if( not cmd_exists('qstat') )
+    {
+      print "ERROR: queue requires the 'qstat' command, which was not found\n";
+      return;
+    }
+
+    my $cmd = shift @_;
+
+    if( "who" =~ /^$cmd/ )
+    {
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | sort | uniq -c | sort' );
+    }
+
+    if( "number" =~ /^$cmd/ )
+    {
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | wc -l' );
+    }
+
+
+
+    return;
+
+}
+
 
 %commands  = (
                time  => { func => \&time_cmd,  help => "collect information about run times." },
                clean => { func => \&clean_cmd, help => "clean files created by the run command." },
-               queue => { func => \&queue_cmd, help => "print information about the queue. accepts sub-commands. run 'queue -h.' for more information" },
+               queue => { func => \&queue_cmd, help => "print information about the queue. accepts sub-commands. run 'queue -h.' for more information." },
+               BTEC  => { func => \&BTEC_cmd,  help => "BTEC related information." },
              );
 
 
@@ -263,7 +312,7 @@ our(
 getopt('V');
 
 # help
-if($opt_h)
+if($opt_h or not @ARGV)
 {
   usage();
   exit(0);
