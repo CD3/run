@@ -178,8 +178,8 @@ sub qsub {
     my $name = generate_name_for_cmd($CMD);
 
     push @conf, sprintf( $scheduler_templates{name    }->{$scheduler}, $name );
-    push @conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, "10:00:00");
-    push @conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash");
+    push @conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, $walltime );
+    push @conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash" );
     push @conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
     push @conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
 
@@ -244,7 +244,7 @@ sub gnuparallel {
       {
         $i = $i+1;
         my $stdoutfn = "_run-".$names[$i-1].".o".${i};
-        system("cat $file >> $stdoutfn");
+        system("cat $file >> $stdoutfn 2>&1");
       }
     }
     else
@@ -339,6 +339,7 @@ options:
   -l             list supported handlers
   -C CMD         prepend CMD to all commands befor running
   -d DEL         use DEL to delimite commands (default '$arg_delim')
+  -w HH:MM:SS    maximum walltime for jobs. this is only used for handlers that submit jobs to a scheduler.
   -o             send standard output to files. note that this is only meaningful for handlers that would normally send stdout to the screen.
 
 
@@ -376,9 +377,10 @@ our(
   ,$opt_D
   ,$opt_n
   ,$opt_o
+  ,$opt_w
    );
 
-getopt('HVCd');
+getopt('HVCdw');
 
 # help
 if($opt_h)
@@ -409,6 +411,9 @@ if($opt_l)
 }
 
 $arg_delim = $opt_d if($opt_d);
+
+$walltime = $opt_w  ? $opt_w : "10:00:00";
+
 
 
 
