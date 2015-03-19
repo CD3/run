@@ -1,4 +1,7 @@
 #!/usr/bin/perl -w
+=head1
+Quicly queue and run jobs from the command line.
+=cut
 
 use File::Temp qw/tempfile tempdir/;
 use File::Basename;
@@ -100,7 +103,7 @@ run 3 BTEC runs
 
     > run -C BTECthermal config1.btec : config2.btec : config3.btec
 
-run BTEC for all config file in the current directory
+run BTEC for all config files in the current directory
 
     > run -C BTECthermal -d' ' config*.btec
 
@@ -160,12 +163,7 @@ EOF
 
 sub write_readme {
 
-  open(FILE, ">README.md");
-  print FILE $readme_str;
-  print FILE "\n\n";
-  print FILE "#Usage\n";
-  print FILE "$usage_str";
-  close(FILE);
+  system("perldoc -u $0 > README.pod");
 
 }
 
