@@ -1,5 +1,135 @@
-=head1
-Quicly queue and run jobs from the command line.
+=head1 NAME
+
+run - Quicly queue and run jobs from the command line.
+
+=head1 DESCRIPTION
+
+L<run> tries to run a set of commands using different handlers. It is primarily useful for running commands
+that are expected to run for a long time, such as physics simulations, and it attempts to find a handler
+that will complete all commands as quicly as possible. For example, if you are working on
+a cluster and the qsub command exists, L<run> will create submission scripts and submit them to the scheduler.
+If the qsub command does not exist, then other handlers are checked. For example, if the parallel command
+exists (gnu parallel), it is used to run all commands in parallel.
+
+If all other handlers fail, L<run> will fallback to just running each command in serial, one after the other.
+This turns out to still be useful, because if you have a set of simulations that you need to perform, you can
+use L<run> to automatically run each simulation after one has completed.
+
+All handlers will first create a script wrapper for each command to run and then run this script.
+This is done so that extra information can be embedded in the command output, such as a timestamp for timing data.
+
+
+=head2 Current Handlers
+
+=over
+
+=item C<qsub>
+
+=item C<gnuparallel>
+
+=item C<serial>
+
+=back
+
+=head2 Planned Handlers
+
+=over
+
+=item C<xjobs>
+
+=item C<pexec>
+
+=back
+
+Note that L<run> does not do load ballancing. Each handler is given the list of commands to run, and they are responsible
+for managing the system workload.
+
+=head1 USAGE
+
+  > run cmd1 [args] [: cmd2 [args] [...] ]
+
+=head2 OPTIONS:
+
+=over
+
+=item C<-h> 
+
+this help message
+
+=item C<-V LEVEL>
+
+set verbose level to LEVEL
+  
+=item C<-v>
+
+enable verbose level 1
+
+=item C<-n>
+
+dry run. don't execute hanlder commands, just print them to stdout
+
+=item C<-H HANDLER>
+
+specify the HANDLER to use
+
+=item C<-l>
+
+list supported handlers
+
+=item C<-C CMD>
+
+prepend CMD to all commands befor running
+
+=item C<-d DEL>
+
+use DEL to delimite commands (default '$arg_delim')
+
+=item C<-w HH:MM:SS>
+
+maximum walltime for jobs. this is only used for handlers that submit jobs to a scheduler.
+
+=item C<-o>
+
+send standard output to files. note that this is only meaningful for handlers that would normally send stdout to the screen.
+
+=item C<-f>
+
+leave the generated wrapper script in the current working directory.
+
+=item C<-F>
+
+treat all arguments as the names of already existing wrapper scripts and run dirrectly without generating new wrapper scripts.
+
+=back
+
+=head1 EXAMPLES
+
+run 3 scripts
+
+    > run script1.sh : script2.sh : script3.sh
+
+run 3 BTEC runs
+
+    > run -C BTECthermal config1.btec : config2.btec : config3.btec
+
+run BTEC for all config files in the current directory
+
+    > run -C BTECthermal -d' ' config*.btec
+
+run 3 scripts using the gnuparallel handler
+
+    > run -H gnuparallel script1.sh : script2.sh : script3.sh
+
+first create run scripts for three commands, then run these scripts.
+
+    > run -f cmd1 : cmd2 : cmd3
+    > run -F run_script-*.sh
+
+get a list of all handlers
+
+    > run -l
+
+
 
 =cut
 
