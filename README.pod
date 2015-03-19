@@ -4,16 +4,16 @@ run - Quicly queue and run jobs from the command line.
 
 =head1 DESCRIPTION
 
-L<run> tries to run a set of commands using different handlers. It is primarily useful for running commands
+C<run> tries to run a set of commands using different handlers. It is primarily useful for running commands
 that are expected to run for a long time, such as physics simulations, and it attempts to find a handler
 that will complete all commands as quicly as possible. For example, if you are working on
-a cluster and the qsub command exists, L<run> will create submission scripts and submit them to the scheduler.
+a cluster and the qsub command exists, C<run> will create submission scripts and submit them to the scheduler.
 If the qsub command does not exist, then other handlers are checked. For example, if the parallel command
 exists (gnu parallel), it is used to run all commands in parallel.
 
-If all other handlers fail, L<run> will fallback to just running each command in serial, one after the other.
+If all other handlers fail, C<run> will fallback to just running each command in serial, one after the other.
 This turns out to still be useful, because if you have a set of simulations that you need to perform, you can
-use L<run> to automatically run each simulation after one has completed.
+use C<run> to automatically run each simulation after one has completed.
 
 All handlers will first create a script wrapper for each command to run and then run this script.
 This is done so that extra information can be embedded in the command output, such as a timestamp for timing data.
@@ -41,7 +41,7 @@ This is done so that extra information can be embedded in the command output, su
 
 =back
 
-Note that L<run> does not do load ballancing. Each handler is given the list of commands to run, and they are responsible
+Note that C<run> does not do load ballancing. Each handler is given the list of commands to run, and they are responsible
 for managing the system workload.
 
 =head1 USAGE
