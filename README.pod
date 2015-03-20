@@ -86,6 +86,10 @@ dry run. don't execute handler commands, just print them to stdout.
 
 specify the HANDLER to use.
 
+=item C<-O HANDLER_OPTIONS>
+
+pass a list of options to the handler command.
+
 =item C<-l>
 
 list supported handlers.
@@ -155,6 +159,30 @@ C<run> only uses a few standard Perl modules. These modules should be installed 
 and it should not be necessary to install any additional modules.
 
 In addition to this, a few standard Linux commands are used, such as C<cp> and C<chmod>.
+
+=head1 LICENSE
+
+The MIT License (MIT)
+
+Copyright (c) 2015 CD Clark III
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 
 =cut
