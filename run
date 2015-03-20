@@ -189,12 +189,14 @@ my $version = '0.1.0';
            , 'shell' => { 'SGE'  => '#$ -S /bin/bash'
                         , 'PBS'  => ''
                         , 'MOAB' => '' }
+
            , 'cwd'   => { 'SGE'  => '#$ -cwd'
                         , 'PBS'  => ''
                         , 'MOAB' => '' }
+
            , 'mergeout'   => { 'SGE'  => '#$ -j y'
-                             , 'PBS'  => ''
-                             , 'MOAB' => '' }
+                             , 'PBS'  => '#PBS -j oe'
+                             , 'MOAB' => '#MOAB -j oe' }
              );
 
 $shebang = "#! ".`which bash`;
