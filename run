@@ -323,7 +323,12 @@ sub gnuparallel_run_scripts {
 
         my $name = generate_name_for_cmd($cmd);
         my $stdoutfn = sprintf($stdoutfn_tmpl, $name, ${i} );
-        system("cat $file >> $stdoutfn 2>&1");
+        #system("cat $file >> $stdoutfn 2>&1");
+        open(INFILE, "<$file");
+        open(OUTFILE, ">>$stdoutfn");
+        { local $/; print OUTFILE <INFILE>; }
+        close(INFILE);
+        close(OUTFILE);
       }
     }
     else
@@ -642,7 +647,6 @@ $handler->{func}->(@CMDS);
 if( $opt_f )
 {
   # all scripts will be in tempdir and have the script_prefix.
-  #system("cp ${tempdir}/${script_prefix}*${script_suffix} ./");
   opendir(DIR,$tempdir);
   my @files = grep(/^${script_prefix}.*${script_suffix}$/, readdir(DIR) );
   foreach my $file (@files) { copy("${tempdir}/${file}", "${file}") };
