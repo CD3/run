@@ -208,7 +208,8 @@ $date_fmt = "%Y%m%d %H:%M:%S";
 $script_prefix = "run_script-";
 $script_suffix = ".sh";
 
-#$stdout_fn_tmpl = "";
+$stdoutfn_tmpl = "run-%s.o%d";
+#$stderrfn_tmpl = "run-%s.e%d";
 
 #           _                     _   _                 
 # ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 
@@ -476,7 +477,7 @@ sub gnuparallel_run_scripts {
         }
 
         my $name = generate_name_for_cmd($cmd);
-        my $stdoutfn = "_run-".$name.".o".${i};
+        my $stdoutfn = sprintf($stdoutfn_tmpl, $name, ${i} );
         system("cat $file >> $stdoutfn 2>&1");
       }
     }
@@ -527,6 +528,8 @@ sub xjobs_generate_scripts {
 sub xjobs_run_scripts {
 
   my $cmd_to_run = "echo '".join("\n", @_)."' | xjobs";
+  my $stdoutfn = sprintf($stdoutfn_tmpl, "X", "1" );
+     $cmd_to_run .= "> $stdoutfn" if( $opt_o );
   if( $opt_n )
   {
     print( $cmd_to_run."\n");
