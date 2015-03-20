@@ -27,6 +27,10 @@ This is done so that extra information can be embedded in the command output, su
 
 =item C<gnuparallel>
 
+=item C<xjobs>
+
+currently, stdout to file is not supported by this handler.
+
 =item C<serial>
 
 =back
@@ -34,8 +38,6 @@ This is done so that extra information can be embedded in the command output, su
 =head2 Planned Handlers
 
 =over
-
-=item C<xjobs>
 
 =item C<pexec>
 
@@ -54,35 +56,35 @@ for managing the system workload.
 
 =item C<-h> 
 
-this help message
+this help message.
 
 =item C<-V LEVEL>
 
-set verbose level to LEVEL
+set verbose level to LEVEL.
   
 =item C<-v>
 
-enable verbose level 1
+enable verbose level 1.
 
 =item C<-n>
 
-dry run. don't execute handler commands, just print them to stdout
+dry run. don't execute handler commands, just print them to stdout.
 
 =item C<-H HANDLER>
 
-specify the HANDLER to use
+specify the HANDLER to use.
 
 =item C<-l>
 
-list supported handlers
+list supported handlers.
 
 =item C<-C CMD>
 
-prepend CMD to all commands before running
+prepend CMD to all commands before running.
 
 =item C<-d DEL>
 
-use DEL to delimiter commands (default '$arg_delim')
+use DEL to delimiter commands (default '$arg_delim').
 
 =item C<-w HH:MM:SS>
 

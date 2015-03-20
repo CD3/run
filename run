@@ -28,6 +28,10 @@ This is done so that extra information can be embedded in the command output, su
 
 =item C<gnuparallel>
 
+=item C<xjobs>
+
+currently, stdout to file is not supported by this handler.
+
 =item C<serial>
 
 =back
@@ -35,8 +39,6 @@ This is done so that extra information can be embedded in the command output, su
 =head2 Planned Handlers
 
 =over
-
-=item C<xjobs>
 
 =item C<pexec>
 
@@ -55,35 +57,35 @@ for managing the system workload.
 
 =item C<-h> 
 
-this help message
+this help message.
 
 =item C<-V LEVEL>
 
-set verbose level to LEVEL
+set verbose level to LEVEL.
   
 =item C<-v>
 
-enable verbose level 1
+enable verbose level 1.
 
 =item C<-n>
 
-dry run. don't execute handler commands, just print them to stdout
+dry run. don't execute handler commands, just print them to stdout.
 
 =item C<-H HANDLER>
 
-specify the HANDLER to use
+specify the HANDLER to use.
 
 =item C<-l>
 
-list supported handlers
+list supported handlers.
 
 =item C<-C CMD>
 
-prepend CMD to all commands before running
+prepend CMD to all commands before running.
 
 =item C<-d DEL>
 
-use DEL to delimiter commands (default '$arg_delim')
+use DEL to delimiter commands (default '$arg_delim').
 
 =item C<-w HH:MM:SS>
 
@@ -188,7 +190,7 @@ $date_fmt = "%Y%m%d %H:%M:%S";
 $script_prefix = "run_script-";
 $script_suffix = ".sh";
 
-$stdout_fn_tmpl = "";
+#$stdout_fn_tmpl = "";
 
 #           _                     _   _                 
 # ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 
@@ -275,9 +277,8 @@ sub message
                                          
 # all handlers need to follow a special convension:
 # - if called with no arguments, return true if the handler can handle
-#
-#
 # remember that shell commands return 0 ON SUCESS.
+
 
 # _                       _       _            
 #| |_ ___ _ __ ___  _ __ | | __ _| |_ ___  ___ 
@@ -302,7 +303,7 @@ sub HDLR {
 #    |_|                
 
 sub qsub_generate_scripts {
-  # we need ot figure out what scheduler is running so we can create the correct
+  # we need to figure out what scheduler is running so we can create the correct
   # script
   my $scheduler = "UNKNOWN";
 
@@ -428,7 +429,7 @@ sub gnuparallel_run_scripts {
 
   if( $opt_n )
   {
-    print( $cmd_to_run."\n")
+    print( $cmd_to_run."\n");
   }
   else
   {
@@ -499,6 +500,47 @@ sub gnuparallel {
 # >  < | | (_) | |_) \__ \
 #/_/\_\/ |\___/|_.__/|___/
 #    |__/                 
+
+sub xjobs_generate_scripts {
+  # turns out, we can just use the scripts we would use for gnuparrallel
+  return gnuparallel_generate_scripts(@_);
+}
+
+sub xjobs_run_scripts {
+
+  my $cmd_to_run = "echo '".join("\n", @_)."' | xjobs";
+  if( $opt_n )
+  {
+    print( $cmd_to_run."\n");
+  }
+  else
+  {
+    system($cmd_to_run);
+  }
+
+}
+
+sub xjobs {
+  if( scalar @_ == 0 ) {
+    return cmd_exists('xjobs');
+  }
+
+  # generate all the scripts first
+  if( $opt_F )
+  {
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+  }
+  else
+  {
+    @scripts = xjobs_generate_scripts(@_);
+  }
+
+  # now run them
+  xjobs_run_scripts(@scripts);
+
+
+}
 
 
 #               _       _ 
@@ -586,7 +628,8 @@ sub serial {
 
 my @handlers  = (
                   { name => "qsub"         , func => \&qsub        , help => "submit jobs to a scheduler" } ,
-                  { name => "gnuparallel"  , func => \&gnuparallel , help => "run commands using the the gnu parallel script" } ,
+                  { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
+                  { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility." } ,
                   { name => "serial"       , func => \&serial      , help => "run jobs one after the other" } ,
                 );
 
