@@ -268,7 +268,7 @@ sub gnuparallel_generate_scripts {
 
     my @lines = build_skel_script( $CMD );
     my $scriptfn = write_script( @lines );
-    system("chmod +x ".$scriptfn);
+    chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
   }
 
@@ -428,8 +428,7 @@ sub serial_generate_scripts {
 
     my @lines = build_skel_script( $CMD );
     my $scriptfn = write_script( @lines );
-    system("chmod +x ".$scriptfn);
-
+    chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
 
   }
