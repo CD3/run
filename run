@@ -26,17 +26,29 @@ This is done so that extra information can be embedded in the command output, su
 
 =item C<qsub>
 
+This handler uses the C<qsub> command. C<qsub> is used to submit jobs to several HPC
+schedulers including PBS, MOAB, and SGE. The qsub handler will automatically
+create a submission script for each job and subit the scripts to the scheduler.
+This is handy if you want to just quickly submit a basic job that does not
+require a complex submission script.
+
 =item C<gnuparallel>
+
+This handler uses the C<parallel> command, from the gnuparallel project. C<parallel> is a
+perl script that runs multiple jobs in parallel and even supports running jobs on remote computers
+(not supported by run). It attempts to work as a parallel version of C<xargs>.
 
 =item C<xjobs>
 
-currently, stdout to file is not supported by this handler.
+This handler uses the C<xjobs> command. It strives to be a parallel version of xargs.
 
 =item C<serial>
 
+This handler just runs each job directly, one after the other.
+
 =back
 
-=head2 Planned Handlers
+=head2 Possible Future Handlers
 
 =over
 
@@ -93,7 +105,9 @@ maximum walltime for jobs. this is only used for handlers that submit jobs to a 
 
 =item C<-o>
 
-send standard output to files. note that this is only meaningful for handlers that would normally send stdout to the screen.
+send standard output to files. note that what happens here depends on the handler. some
+handlers create a separate file for each command ran, some put all the stdout of all commands
+in the same file, while others ignore this option all together and always space stdout in files.
 
 =item C<-f>
 
@@ -132,6 +146,16 @@ get a list of all handlers
 
     > run -l
 
+=head1 INSTALLATION
+
+C<run> is a single perl script. To install it, just place it somewhere in your PATH.
+
+=head2 DEPENDENCIES
+
+C<run> only uses a few standard Perl modules. These modules should be installed with Perl
+and it should not be necessary to install any additional modules.
+
+In addition to this, a few standard Linux commands are used, such as C<cp> and C<chmod>.
 
 =cut
 
@@ -140,12 +164,6 @@ use File::Basename;
 use Getopt::Std;
 use Cwd;
 
-# these modules are not needed in general, just when we are debugging.
-if($debug)
-{
-  require Data::Dumper;
-  Data::Dumper->import();
-}
 
 
 #       _       _           _                       
