@@ -707,6 +707,7 @@ $debug         = 1      if ($opt_D);
 $opt_v         = $opt_V if ($opt_V);
 $verbose_level = $opt_v if ($opt_v);
 $verbose_level = 100    if ($debug);
+$opt_O         = "" unless ($opt_O);
 
 
 if($opt_l)
