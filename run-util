@@ -104,7 +104,7 @@ sub time_cmd {
     {
       if( $line =~ /CMD:\s*(.+)/ )
       {
-        push @{$times{$file}->{jobs}}, {cmd=>$1, begin=>0, end=>0, duration=>0};
+        push @{$times{$file}->{jobs}}, {cmd=>$1, begin=>0, end=>0, duration=>-1};
       }
 
       if( $line =~ /BEGIN:\s*([0-9 :]+)/ )
@@ -119,17 +119,23 @@ sub time_cmd {
         $times{$file}->{jobs}->[-1]->{duration} = `date +%s --date='$times{$file}->{jobs}->[-1]->{end}'`
                                                 - `date +%s --date='$times{$file}->{jobs}->[-1]->{begin}'`;
 
-        if( $times{$file}->{jobs}->[-1]->{duration} < 0 )
-        {
-          $times{$file}->{jobs}->[-1]->{duration} = "unfinished";
-        }
-        else
-        {
-          $times{$file}->{duration} += $times{$file}->{jobs}->[-1]->{duration}
-        }
-
       }
     }
+
+    # go through all the jobs and tally up run times
+    for my $job ( @{ $times{$file}->{jobs} })
+    {
+      if( $job->{duration} < 0 )
+      {
+        $job->{duration} = "unfinished";
+      }
+      else
+      {
+        $times{$file}->{duration} += $job->{duration}
+      }
+    }
+        
+
   }
 
 
