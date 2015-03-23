@@ -649,7 +649,7 @@ if( $opt_f )
   # all scripts will be in tempdir and have the script_prefix.
   opendir(DIR,$tempdir);
   my @files = grep(/^${script_prefix}.*${script_suffix}$/, readdir(DIR) );
-  foreach my $file (@files) { copy("${tempdir}/${file}", "${file}") };
+  foreach my $file (@files) { copy("${tempdir}/${file}", "${file}"); chmod 0755, ${file}; }
   closedir(DIR);
 }
 
