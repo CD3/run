@@ -524,6 +524,7 @@ our(
   ,$opt_f  # leave script files in current working directory
   ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
   ,$opt_R  # write README.md
+  ,$opt_S  # simulation mode. treat first argument as command
    );
 
 getopt('HOVCdw');
@@ -584,7 +585,6 @@ $tempdir = tempdir(CLEANUP => $debug ? 0 : 1) or die "Cannot make temp dir.  Una
 @CMDS = split( /\s*$arg_delim\s*/, join(' ', @ARGV) );
 
 # if the -C option was given, then we want to prepend its argument to all commands
-
 if( $opt_C )
 {
   @CMDS = map { $opt_C." ".$_} @CMDS;
@@ -758,7 +758,7 @@ prepend CMD to all commands before running.
 
 =item C<-d DEL>
 
-use DEL to delimiter commands (default '$arg_delim').
+use DEL to delimiter commands (default ':').
 
 =item C<-w HH:MM:SS>
 
@@ -787,6 +787,10 @@ run 3 scripts
     > run script1.sh : script2.sh : script3.sh
 
 run 3 BTEC runs
+
+    > run BTECthermal config1.btec : BTECthermal config2.btec : BTECthermal config3.btec
+
+or, using the -C option
 
     > run -C BTECthermal config1.btec : config2.btec : config3.btec
 
@@ -822,7 +826,7 @@ In addition to this, a few standard Linux commands are used.
 
 The MIT License (MIT)
 
-Copyright (c) 2015 CD Clark III
+Copyright (c) 2015-present CD Clark III
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
