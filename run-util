@@ -16,7 +16,7 @@ use List::Util qw/max/;
 
 $debug = 0;
 $verbose_level = 0;
-$version = '0.1.0';
+$VERSION = '0.1.0';
 
 #           _                     _   _                 
 # ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 
@@ -29,7 +29,7 @@ $version = '0.1.0';
 sub usage()
 {
 my $me = basename($0);
-print $me." - $version\n";
+print $me." - $VERSION\n";
 print <<'EOF';
 A set of useful utilities when running jobs, particularly when using the run command.
 

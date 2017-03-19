@@ -17,8 +17,6 @@ use Cwd;
 
 $debug = 0;
 
-my $version = '0.1.0';
-
 %scheduler_templates = (
              'name' => { 'SGE'  => '#$ -N %s'
                        , 'PBS'  => '#PBS -N %s'
@@ -668,6 +666,8 @@ exit(0);
 =head1 NAME
 
 run - Quickly queue and run jobs from the command line.
+
+VERSION: 0.1.0
 
 =head1 DESCRIPTION
 
