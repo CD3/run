@@ -235,7 +235,6 @@ sub qsub {
   }
 
   # generate all the scripts first
-  # generate all the scripts first
   if( $opt_F )
   {
     # if the script names does not contain a relative or absolute path, we need to add one.
@@ -281,7 +280,7 @@ sub gnuparallel_run_scripts {
   #
   # parallel cmd ::: arg1 arg2 arg3
   #
-  # if no command is given, then each argument is treated as a command ran ran
+  # if no command is given, then each argument is treated as a command and ran
   #
   # parallel ::: cmd1 cmd2 cmd3
   #
@@ -524,7 +523,6 @@ our(
   ,$opt_f  # leave script files in current working directory
   ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
   ,$opt_R  # write README.md
-  ,$opt_S  # simulation mode. treat first argument as command
    );
 
 getopt('HOVCdw');
@@ -590,9 +588,20 @@ if( $opt_C )
   @CMDS = map { $opt_C." ".$_} @CMDS;
 }
 
+# check if some stdin is being piped in
+if( ! -t STDIN)
+{
+  # if so, pass each item in stdin to all commands as an argument
+  foreach $ARG (<STDIN>)
+  {
+    push @NEWCMDS, map { $_." ".$ARG } @CMDS;
+  }
+  @CMDS = @NEWCMDS;
+}
 
 
-# try to figure out what options we have.
+
+# try to figure out what handler to use
 undef $handler;
 if($opt_H)
 {
@@ -662,22 +671,24 @@ run - Quickly queue and run jobs from the command line.
 
 =head1 DESCRIPTION
 
-C<run> is a perl script that will run a set of commands. Commands are ran using
-"handlers", and C<run> supports several different handlers.  It is primarily
-useful for running commands that are expected to run for a long time, such as
-physics simulations, and it attempts to find a handler that will complete all
-commands as quickly as possible. For example, if you are working on a cluster
-and the qsub command exists, C<run> will create submission scripts and submit
-them to the scheduler.  If the qsub command does not exist, then other handlers
-are checked. For example, if the parallel command exists (gnu parallel), it is
-used to run all commands in parallel.
+C<run> is a perl script that will run a set of commands.
+It is primarily useful for running commands that are expected to run for a long
+time, such as physics simulations.  C<run> uses "handlers" to actually run the
+commands, and tries to automatically select the best handler to use to complete
+the runs as quickly as possible. For example, if you are working on a cluster
+and the C<qsub> command exists, C<run> will create submission scripts and submit
+them to the scheduler.  If the C<qsub> command does not exist, then other handlers
+are checked. For example, if the C<parallel> (gnu parallel) or C<xjobs> commands
+are found, they can be used to run all commands in parallel.
 
-If all other handlers fail, C<run> will fall back to just running each command in serial, one after the other.
-This turns out to still be useful, because if you have a set of simulations that you need to perform, you can
-use C<run> to automatically run each simulation after one has completed.
+If all other handlers fail, C<run> will fall back to just running each command
+in serial, one after the other.  This turns out to still be useful, because if
+you have a set of simulations that you need to perform, you can use C<run> to
+automatically run each simulation after one has completed.
 
-All handlers will first create a script wrapper for each command to run and then run this script.
-This is done so that extra information can be embedded in the command output, such as a time stamp for timing data.
+All handlers will first create a script wrapper for each command to run and
+then run this script.  This is done so that extra information can be embedded
+in the command output, such as a time stamp for timing data.
 
 
 =head2 Current Handlers
@@ -700,7 +711,9 @@ perl script that runs multiple jobs in parallel and even supports running jobs o
 
 =item C<xjobs>
 
-This handler uses the C<xjobs> command. It strives to be a parallel version of xargs.
+This handler uses the C<xjobs> command. C<xjobs> is a small C program written by Thomas Maier-Komer that
+that a command multiple times with different arguments in parallel.
+It strives to be a parallel version of xargs.
 
 =item C<serial>
 
@@ -722,6 +735,12 @@ for managing the system workload.
 =head1 USAGE
 
   > run cmd1 [args] [: cmd2 [args] [...] ]
+
+  if standard inputis piped in from another command, then run will read arguments from stdin and run each command with
+  each argumnet.
+
+  > command that produces list of arguents | run cmd1 [: cmd2 [...] ]
+ 
 
 =head2 OPTIONS:
 
@@ -797,9 +816,17 @@ or, using the -C option
 
     > run -C BTECthermal config1.btec : config2.btec : config3.btec
 
+or, using the stdin
+
+    > echo config{1,2,3}.btec | run BTECthermal
+
 run BTEC for all config files in the current directory
 
     > run -C BTECthermal -d' ' config*.btec
+
+or, using the stdin
+
+    > echo config*.btec | run BTECthermal
 
 run 3 scripts using the gnuparallel handler
 
