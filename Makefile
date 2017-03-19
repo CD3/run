@@ -1,8 +1,8 @@
 DESTDIR=${HOME}
 
 docs:
-	podselect run > README.md
-	podselect -section LICENSE run > LICENSE.md
+	podselect run > README.pod
+	podselect -section LICENSE run > LICENSE.pod
 
 install:
 	mkdir -p $(DESTDIR)/bin
