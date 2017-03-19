@@ -713,7 +713,7 @@ perl script that runs multiple jobs in parallel and even supports running jobs o
 
 This handler uses the C<xjobs> command. C<xjobs> is a small C program written by Thomas Maier-Komer that
 that a command multiple times with different arguments in parallel.
-It strives to be a parallel version of xargs.
+It strives to be a parallel version of C<xargs>.
 
 =item C<serial>
 
