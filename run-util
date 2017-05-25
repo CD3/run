@@ -222,7 +222,7 @@ EOF
       return;
     }
 
-    my $cmd = shift @_;
+    my $cmd = @_ ? shift @_ : "who";
 
     if( "who" =~ /^$cmd/ )
     {
