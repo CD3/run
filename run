@@ -114,10 +114,13 @@ sub generate_name_for_cmd
 {
   my $CMD = join(" ",@_);
   my $name = $CMD;
-  $name =~ s/\/+/-/g;
-  $name =~ s/ +/__/g;
-  $name =~ s/^\./_/g;
-  $name =~ s/^[-\.]//g;
+  # replace all special characters
+  $name =~ s/\/+/--/g;
+  $name =~ s/[^a-zA-Z0-9]/_/g;
+
+  # if the filename is longer than 40 characters, then
+  # create an md5 sum instead.
+  ($name,my $trash) = split / /, `echo $CMD | md5sum` if( length $name > 40 );
 
   return $name;
 }
