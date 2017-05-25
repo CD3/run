@@ -226,7 +226,12 @@ EOF
 
     if( "who" =~ /^$cmd/ )
     {
-      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | sort | uniq -c | sort' );
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | sort | uniq -c | sort -g' );
+    }
+
+    if( "me" =~ /^$cmd/ )
+    {
+      system('qstat | gawk \'$4 && $4 != "user" {print $4}\' | grep ${USER} | sort | uniq -c | sort -g' );
     }
 
     if( "number" =~ /^$cmd/ )
