@@ -207,6 +207,7 @@ sub queue_cmd {
 
     commands:
       who    - print list of all users running/queueing jobs and the number of jobs they have running/queued
+      me - print number of jobs ran by ${USER}
       number - print the number of queued jobs
 
     options:
