@@ -192,7 +192,7 @@ sub qsub_generate_scripts {
 
     push @scheduler_conf, sprintf( $scheduler_templates{name    }->{$scheduler}, $name );
     push @scheduler_conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, $walltime );
-    push @scheduler_conf, sprintf( $scheduler_templates{shell   }->{$scheduler}, "bash" );
+    push @scheduler_conf, sprintf( $scheduler_templates{shell   }->{$scheduler},);
     push @scheduler_conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
     push @scheduler_conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
 
@@ -226,9 +226,12 @@ sub qsub {
     # but, just because the qsub command exists, does not mean
     # it will work. we can try to submit simple job through the
     # standard input.
-    $e = system('echo "hostname" | qsub > /dev/null 2>&1');
+    unless($opt_T)
+    {
+      $e = system('echo "hostname" | qsub > /dev/null 2>&1');
 
-    return 0 if( $e );
+      return 0 if( $e );
+    }
 
     # the qsub command exists, and it appears to be accepting commands,
     # so it looks like we can give it the OK.
@@ -248,6 +251,22 @@ sub qsub {
 
   # now run them
   qsub_run_scripts(@scripts);
+
+  # if the block option is set
+  # block until all jobs have finished
+  if( $opt_B )
+  {
+    my $jobs = join ",", map { generate_name_for_cmd($_); } @_;
+    my $wait = 1;
+    while( $wait )
+    {
+      # sleep for 10 seconds
+      sleep(10);
+      my $out = `qstat -j $jobs`;
+      $wait = 0 unless( $out =~ /^job_number:/m );
+    }
+  }
+
 }
 
 
@@ -523,6 +542,8 @@ our(
   ,$opt_w  # set walltime
   ,$opt_f  # leave script files in current working directory
   ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
+  ,$opt_B  # block until job is done
+  ,$opt_T  # do not test job submission (qsub handler only)
   ,$opt_R  # write README.md
    );
 
@@ -542,7 +563,7 @@ if($opt_R)
 if($opt_n)
 {
   print "Dry Run. Will just print commands that would be executed instead of executing them.\n";
-  print "Note that this ma not help much if a temporary script is going to be created an ran.\n\n";
+  print "Note that this may not help much if a temporary script is going to be created an ran.\n\n";
 }
 
 $debug         = 1      if ($opt_D);
@@ -802,6 +823,15 @@ leave the generated wrapper script in the current working directory.
 =item C<-F>
 
 treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
+
+=item C<-B>
+
+Block until all jobs have finished running (only effects qsub handler).
+
+=item C<-T>
+
+Do not test scheduler before submitting jobs (qsub handler only).
+
 
 =back
 
