@@ -2,6 +2,8 @@
 
 run - Quickly queue and run jobs from the command line.
 
+VERSION: 0.2.0
+
 =head1 DESCRIPTION
 
 C<run> is a perl script that will run a set of commands.
@@ -132,6 +134,15 @@ leave the generated wrapper script in the current working directory.
 =item C<-F>
 
 treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
+
+=item C<-B>
+
+Block until all jobs have finished running (only effects qsub handler).
+
+=item C<-T>
+
+Do not test scheduler before submitting jobs (qsub handler only).
+
 
 =back
 
