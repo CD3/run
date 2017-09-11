@@ -5,6 +5,7 @@ use File::Basename;
 use File::Copy;
 use Getopt::Std;
 use Cwd;
+use Data::Dumper;
 
 
 
@@ -17,29 +18,50 @@ use Cwd;
 
 $debug = 0;
 
-%scheduler_templates = (
-             'name' => { 'SGE'  => '#$ -N %s'
-                       , 'PBS'  => '#PBS -N %s'
-                       , 'MOAB' => '#MOAB -N %s' }
+%run_script_templates = ();
+$run_script_templates{'serial'} = <<'EOF';
+<%SHEBANG%>
 
-           , 'walltime' => { 'SGE'  => '#$ -l h_rt=%s'
-                           , 'PBS'  => '#PBS -l walltime=%s'
-                           , 'MOAB' => '#MOAB -l walltime=%s' }
+<%SCRIPT%>
+EOF
 
-           , 'shell' => { 'SGE'  => '#$ -S /bin/bash'
-                        , 'PBS'  => ''
-                        , 'MOAB' => '' }
+$run_script_templates{'PBS'} = <<'EOF';
+<%SHEBANG%>
 
-           , 'cwd'   => { 'SGE'  => '#$ -cwd'
-                        , 'PBS'  => ''
-                        , 'MOAB' => '' }
+#PBS -N <%NAME%>
+#PBS -l walltime=<%WALLTIME%>
+#PBS -j oe
 
-           , 'mergeout'   => { 'SGE'  => '#$ -j y'
-                             , 'PBS'  => '#PBS -j oe'
-                             , 'MOAB' => '#MOAB -j oe' }
-             );
+<%SCRIPT%>
 
-$shebang = "#! ".`which bash`;
+EOF
+
+$run_script_templates{'SGE'} = <<'EOF';
+<%SHEBANG%>
+
+#$ -N <%NAME%>
+#$ -l h_rt=<%WALLTIME%>
+#$ -j y
+#$ -S <%SHELL%>
+#$ -cwd
+
+<%SCRIPT%>
+
+EOF
+
+$run_script_templates{'MOAB'} = <<'EOF';
+<%SHEBANG%>
+
+#MOAB -N <%NAME%>
+#MOAB -l walltime=<%WALLTIME%>
+#MOAB -j oe
+
+<%SCRIPT%>
+
+EOF
+
+$shell = `which bash` =~ s/\s*$//gr;
+$shebang = "#! ".$shell;
 
 $verbose_level = 0;
 
@@ -70,6 +92,19 @@ sub usage()
   system("perldoc $0");
 }
 
+sub read_file
+{
+  my ($filename) = @_;
+  my $script = "";
+  open(my $fh, '<', $filename) or die "Cannot open file $filename";
+  {
+    local $/;
+    $script = <$fh>;
+  }
+  close($fh);
+
+  return $script;
+}
 
 
 sub cmd_exists
@@ -86,7 +121,6 @@ sub build_skel_script
   my ($CMD) = @_;
   my @lines = ();
 
-  push @lines, $shebang."\n";
   push @lines, "cd ".getcwd()."\n";
   push @lines, "echo 'CMD: $CMD'\n";
   push @lines, "echo -n 'BEGIN: '";
@@ -95,7 +129,7 @@ sub build_skel_script
   push @lines, "echo -n 'END:   '";
   push @lines, "date +'$date_fmt'\n";
 
-  return @lines;
+  return join "\n", @lines;
 }
 
 
@@ -167,39 +201,44 @@ sub HDLR {
 #    |_|                
 
 sub qsub_generate_scripts {
+  my ($args) = @_;
+
   # we need to figure out what scheduler is running so we can create the correct
   # script
   my $scheduler = "UNKNOWN";
 
+  $scheduler = "PBS";
   $scheduler = "PBS"  if( cmd_exists( "pbsnodes" ) );
   $scheduler = "MOAB" if( cmd_exists( "moabnodes" ) );
   $scheduler = "SGE"  if( cmd_exists( "sge_qmaster" ) );
+  $scheduler = $args->{args}->[0] if( scalar @{$args->{args}} );
 
-  message( 1, "Scheduler detected: $scheduler");
+  message( 1, "Scheduler detected: $scheduler\n");
 
   my @scripts = ();
 
   $cmdi = 0;
-  for $CMD (@_)
+  for $CMD (@{$args->{cmds}})
   {
     $cmdi = $cmdi+1;
 
+
+
     # generate the script that we will submit.
-    my @lines = build_skel_script( $CMD );
-    my @scheduler_conf = ();
 
-    my $name = generate_name_for_cmd($CMD);
+    my $name   = generate_name_for_cmd($CMD);
+    my $script = $run_script_templates{$scheduler};
+    $script = read_file($opt_t) if( defined( $opt_t ) );
+    my $text   = join("\n",build_skel_script( $CMD ));
 
-    push @scheduler_conf, sprintf( $scheduler_templates{name    }->{$scheduler}, $name );
-    push @scheduler_conf, sprintf( $scheduler_templates{walltime}->{$scheduler}, $walltime );
-    push @scheduler_conf, sprintf( $scheduler_templates{shell   }->{$scheduler},);
-    push @scheduler_conf, sprintf( $scheduler_templates{cwd     }->{$scheduler} );
-    push @scheduler_conf, sprintf( $scheduler_templates{mergeout}->{$scheduler} );
+    $script =~ s/<%SHEBANG%>/$shebang/g;
+    $script =~ s/<%NAME%>/$name/g;
+    $script =~ s/<%WALLTIME%>/$walltime/g;
+    $script =~ s/<%SHELL%>/$shell/g;
+    $script =~ s/<%SCRIPT%>/$text/g;
+    $script =~ s/<%CMD%>/$CMD/g;
 
-    # add the scheduler configuration after the shebang, but before everything else
-    splice @lines, 1, 0, @scheduler_conf;
-
-    push @scripts, write_script( @lines );
+    push @scripts, write_script( $script );
 
   }
 
@@ -217,7 +256,8 @@ sub qsub_run_scripts {
 }
 
 sub qsub {
-  if( scalar @_ == 0 ) {
+  my ($args) = @_;
+  if( scalar @{$args->{cmds}} == 0 ) {
     # first of all, the qsub command needs to exist
     my $e = cmd_exists('qsub');
     
@@ -242,11 +282,11 @@ sub qsub {
   if( $opt_F )
   {
     # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
   }
   else
   {
-    @scripts = qsub_generate_scripts(@_);
+    @scripts = qsub_generate_scripts($args);
   }
 
   # now run them
@@ -256,7 +296,7 @@ sub qsub {
   # block until all jobs have finished
   if( $opt_B )
   {
-    my $jobs = join ",", map { generate_name_for_cmd($_); } @_;
+    my $jobs = join ",", map { generate_name_for_cmd($_); } @{$args->{cmds}};
     my $wait = 1;
     while( $wait )
     {
@@ -285,8 +325,12 @@ sub gnuparallel_generate_scripts {
   {
     $cmdi = $cmdi+1;
 
-    my @lines = build_skel_script( $CMD );
-    my $scriptfn = write_script( @lines );
+    my $script = $run_script_templates{serial};
+    $script = read_file($opt_t) if( defined( $opt_t ) );
+    my $text = build_skel_script( $CMD );
+    $script =~ s/<%SHEBANG%>/$shebang/g;
+    $script =~ s/<%SCRIPT%>/$text/g;
+    my $scriptfn = write_script($script);
     chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
   }
@@ -360,7 +404,9 @@ sub gnuparallel_run_scripts {
 }
 
 sub gnuparallel {
-  if( scalar @_ == 0 ) {
+  my ($args) = @_;
+
+  if( scalar @{$args->{cmds}} == 0 ) {
     return cmd_exists('parallel');
   }
 
@@ -368,11 +414,11 @@ sub gnuparallel {
   if( $opt_F )
   {
     # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
   }
   else
   {
-    @scripts = gnuparallel_generate_scripts(@_);
+    @scripts = gnuparallel_generate_scripts(@{$args->{cmds}});
   }
 
   # now run them
@@ -411,7 +457,9 @@ sub xjobs_run_scripts {
 }
 
 sub xjobs {
-  if( scalar @_ == 0 ) {
+  my ($args) = @_;
+
+  if( scalar @{$args->{cmds}} == 0 ) {
     return cmd_exists('xjobs');
   }
 
@@ -419,11 +467,11 @@ sub xjobs {
   if( $opt_F )
   {
     # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
   }
   else
   {
-    @scripts = xjobs_generate_scripts(@_);
+    @scripts = xjobs_generate_scripts(@{$args->{cmds}});
   }
 
   # now run them
@@ -450,8 +498,12 @@ sub serial_generate_scripts {
 
     my $name = generate_name_for_cmd($CMD);
 
-    my @lines = build_skel_script( $CMD );
-    my $scriptfn = write_script( @lines );
+    my $script = $run_script_templates{serial};
+    $script = read_file($opt_t) if( defined( $opt_t ) );
+    my $text = build_skel_script( $CMD );
+    $script =~ s/<%SHEBANG%>/$shebang/g;
+    $script =~ s/<%SCRIPT%>/$text/g;
+    my $scriptfn = write_script($script);
     chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
 
@@ -485,7 +537,9 @@ sub serial_run_scripts {
 }
 
 sub serial {
-  if( scalar @_ == 0 ) {
+  my ($args) = @_;
+
+  if( scalar @{$args->{cmds}} == 0 ) {
     return 1; # this one will always work
   }
 
@@ -494,11 +548,11 @@ sub serial {
   if( $opt_F )
   {
     # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @_;
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
   }
   else
   {
-    @scripts = serial_generate_scripts(@_);
+    @scripts = serial_generate_scripts(@{$args->{cmds}});
   }
 
   # now run them
@@ -531,23 +585,24 @@ my @handlers  = (
 
 our(
    $opt_h  # help
-  ,$opt_l  # list handlers
-  ,$opt_H  # use handler specific handler
-  ,$opt_O  # pass options to handler
-  ,$opt_v  # turn on verbose
-  ,$opt_V  # set verbose level
-  ,$opt_D  # debug mode
-  ,$opt_n  # dry run, don't execute commands, just 
-  ,$opt_o  # send stdout to files
-  ,$opt_w  # set walltime
-  ,$opt_f  # leave script files in current working directory
-  ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
   ,$opt_B  # block until job is done
-  ,$opt_T  # do not test job submission (qsub handler only)
+  ,$opt_D  # debug mode
+  ,$opt_F  # dont generate run scripts, just run all arguments as run scripts
+  ,$opt_f  # leave script files in current working directory
+  ,$opt_H  # use handler specific handler
+  ,$opt_l  # list handlers
+  ,$opt_n  # dry run, don't execute commands, just 
+  ,$opt_O  # pass options to handler
+  ,$opt_o  # send stdout to files
   ,$opt_R  # write README.md
+  ,$opt_t  # template script
+  ,$opt_T  # do not test job submission (qsub handler only)
+  ,$opt_V  # set verbose level
+  ,$opt_v  # turn on verbose
+  ,$opt_w  # set walltime
    );
 
-getopt('HOVCdw');
+getopt('HOVCdwt');
 
 # help
 if($opt_h)
@@ -625,12 +680,14 @@ if( ! -t STDIN)
 
 # try to figure out what handler to use
 undef $handler;
+my $handler_args = [];
 if($opt_H)
 {
-  $handler_name = $opt_H;
+  my ($name,$args) = split /:/, $opt_H;
+  @handler_args = split /,/,$args if($args);
   for $hdlr (@handlers)
   {
-    if( $hdlr->{name} =~ /$handler_name/ )
+    if( $hdlr->{name} =~ /$name/ )
     {
       $handler = $hdlr
     }
@@ -638,7 +695,7 @@ if($opt_H)
 
   if( not defined($handler) )
   {
-    print "ERROR: '$handler_name' handler not found. Did you misspell it? Use -l option to see a list of supported handlers";
+    print "ERROR: '$name' handler not found. Did you misspell it? Use -l option to see a list of supported handlers";
     exit(1);
   }
 }
@@ -673,7 +730,7 @@ if( $debug )
   }
 }
 
-$handler->{func}->(@CMDS);
+$handler->{func}->({args => \@handler_args, cmds => \@CMDS});
 
 if( $opt_f )
 {
@@ -772,61 +829,73 @@ for managing the system workload.
 
 =item C<-h> 
 
-this help message.
+This help message.
 
 =item C<-V LEVEL>
 
-set verbose level to LEVEL.
+Set verbose level to LEVEL.
   
 =item C<-v>
 
-enable verbose level 1.
+Enable verbose level 1.
 
 =item C<-n>
 
-dry run. don't execute handler commands, just print them to stdout.
+Dry run. Don't execute handler commands, just print them to stdout.
 
 =item C<-H HANDLER>
 
-specify the HANDLER to use.
+Specify the HANDLER to use.
 
-=item C<-O HANDLER_OPTIONS>
+=item C<-O# HANDLER_OPTIONS>
 
-pass a list of options to the handler command.
+Pass a list of options to the handler command.
 
 =item C<-l>
 
-list supported handlers.
+List supported handlers.
 
 =item C<-C CMD>
 
-prepend CMD to all commands before running.
+Prepend CMD to all commands before running.
 
 =item C<-d DEL>
 
-use DEL to delimiter commands (default ':').
+Use DEL to delimiter commands (default ':').
 
 =item C<-w HH:MM:SS>
 
-maximum walltime for jobs. this is only used for handlers that submit jobs to a scheduler.
+Maximum walltime for jobs. This is only used for handlers that submit jobs to a scheduler.
 
 =item C<-o>
 
-send standard output to files. note that what happens here depends on the handler. some
+Send standard output to files. note that what happens here depends on the handler. Some
 handlers create a separate file for each command ran, some put all the stdout of all commands
 in the same file, while others ignore this option all together and always space stdout in files.
 
 =item C<-f>
 
-leave the generated wrapper script in the current working directory.
+Leave the generated wrapper script in the current working directory.
 
 =item C<-F>
 
-treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
+Treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
 
 =item C<-B>
 
 Block until all jobs have finished running (only effects qsub handler).
+
+=item C<-t FILENAME>
+
+Use FILENAME as template for the run script. The template script will be "rendered"
+by replacing a few special strings. Your script may all, or none, of these strings:
+
+<%CMD%>    The command line (command plus arguments) that is to be run.
+<%SCRIPT%> The set of commands that C<run> would execute. These include date
+           commands before and after the actual command to be run.
+<%NAME%>   A name string generated by run. For short commands, this is just the command
+           line with spaces ' ' replaced by underscores. For long commands, this is a
+           hash of the command line.
 
 =item C<-T>
 
