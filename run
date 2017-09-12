@@ -3,7 +3,7 @@
 use File::Temp qw/tempfile tempdir/;
 use File::Basename;
 use File::Copy;
-use Getopt::Std;
+use Pod::Usage;
 use Getopt::Long qw(:config no_ignore_case);
 use Cwd;
 use Data::Dumper;
@@ -83,11 +83,6 @@ $stdoutfn_tmpl = "run-%s.o%d";
 sub write_readme
 {
   system("perldoc -u $0 > README.pod");
-}
-
-sub usage()
-{
-  system("perldoc $0");
 }
 
 sub read_file
@@ -580,31 +575,13 @@ my @handlers  = (
 # \___/| .__/ \__|_|\___/|_| |_| |_| |_|\__,_|_| |_|\__,_|_|_|_| |_|\__, |
 #      |_|                                                          |___/ 
 
-#our(
-   #$opt_help  # help
-  #,$opt_block  # block until job is done
-  #,$opt_debug  # debug mode
-  #,$opt_args_are_run_scripts  # dont generate run scripts, just run all arguments as run scripts
-  #,$opt_leave_run_scripts  # leave script files in current working directory
-  #,$opt_handler  # use handler specific handler
-  #,$opt_list_handlers  # list handlers
-  #,$opt_dry_run  # dry run, don't execute commands, just 
-  #,$opt_handler_options  # pass options to handler
-  #,$opt_output  # send stdout to files
-  #,$opt_readme  # write README.md
-  #,$opt_template  # template script
-  #,$opt_dont_test_for_handler  # do not test job submission (qsub handler only)
-  #,$opt_verbose  # set verbose level
-  #,$opt_verbose  # turn on verbose
-   #);
-
-#getopt('HOVCdwt');
-
 
 our(
   $opt_help,
+  $opt_manual,
   $opt_block,
   $opt_debug,
+  $opt_delimiter,
   $opt_args_are_run_scripts,
   $opt_leave_run_scripts,
   $opt_handler,
@@ -620,12 +597,19 @@ our(
 
 $opt_verbose = 0;
 
+if( ! scalar @ARGV )
+{
+  pod2usage(-verbose => 0, -output => \*STDOUT);
+}
+
 GetOptions( "help|h" => \$opt_help,
+            "manual|m" => \$opt_manual,
             "debug|D" => \$opt_debug,
+            "delimiter|d" => \$opt_delimiter,
             "block|B" => \$opt_block,
             "command|C" => \$opt_command,
             "args-are-run-scripts|F" => \$opt_args_are_run_scripts,
-            "leave-scripts|f" => \$opt_leave_run_scripts,
+            "leave-run-scripts|f" => \$opt_leave_run_scripts,
             "handler|H=s" => \$opt_handler,
             "handler_options|O=s" => \$opt_handler_options,
             "list-handlers|l" => \$opt_list_handlers,
@@ -635,13 +619,16 @@ GetOptions( "help|h" => \$opt_help,
             "template|t=s" => \$opt_templateemplate,
             "dont-test-for-handler|T" => \$opt_dont_test_for_handler,
             "verbose|v+" => \$opt_verbose,
-          );
+          ) || pod2usage(-verbose => 2);
 
 # help
 if($opt_help)
 {
-  usage();
-  exit(0);
+  pod2usage(-verbose => 1);
+}
+if($opt_manual)
+{
+  pod2usage(-verbose => 2);
 }
 if($opt_readme)
 {
@@ -671,7 +658,7 @@ if($opt_list_handlers)
 }
 
 $opt_debug = ' ' if($opt_args_are_run_scripts);
-$arg_delim = $opt_debug if($opt_debug);
+$arg_delim = $opt_delimiter if($opt_delimiter);
 
 
 
@@ -846,11 +833,10 @@ for managing the system workload.
 
   > run cmd1 [args] [: cmd2 [args] [...] ]
 
-  if standard inputis piped in from another command, then run will read arguments from stdin and run each command with
-  each argumnet.
+  If standard input is piped in from another command, then `run` will read
+  arguments from stdin and run each command with each argumnet.
 
   > command that produces list of arguents | run cmd1 [: cmd2 [...] ]
- 
 
 =head2 OPTIONS:
 
@@ -860,6 +846,10 @@ for managing the system workload.
 
 This help message.
 
+=item C<--manual|-m> 
+
+Print full manual.
+
 =item C<--verbose|v>
 
 Increase the verbose level by 1.
@@ -868,45 +858,45 @@ Increase the verbose level by 1.
 
 Dry run. Don't execute handler commands, just print them to stdout.
 
-=item C<-H HANDLER>
+=item C<--handler|-H HANDLER>
 
 Specify the HANDLER to use.
 
-=item C<-O# HANDLER_OPTIONS>
+=item C<--handler-opts|-O HANDLER_OPTIONS>
 
 Pass a list of options to the handler command.
 
-=item C<-l>
+=item C<--list-handlers|-l>
 
 List supported handlers.
 
-=item C<-C CMD>
+=item C<--command|-C CMD>
 
 Prepend CMD to all commands before running.
 
-=item C<-d DEL>
+=item C<--delimiter|-d DEL>
 
 Use DEL to delimiter commands (default ':').
 
-=item C<-o>
+=item C<--output|-o>
 
 Send standard output to files. note that what happens here depends on the handler. Some
 handlers create a separate file for each command ran, some put all the stdout of all commands
-in the same file, while others ignore this option all together and always space stdout in files.
+in the same file, while others ignore this option all together and always put stdout in files.
 
-=item C<-f>
+=item C<--leave-run-scripts|-f>
 
 Leave the generated wrapper script in the current working directory.
 
-=item C<-F>
+=item C<--args-are-run-scripts|-F>
 
 Treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
 
-=item C<-B>
+=item C<--block|-B>
 
 Block until all jobs have finished running (only effects qsub handler).
 
-=item C<-t FILENAME>
+=item C<--template|-t FILENAME>
 
 Use FILENAME as template for the run script. The template script will be "rendered"
 by replacing a few special strings. Your script may all, or none, of these strings:
@@ -918,7 +908,7 @@ by replacing a few special strings. Your script may all, or none, of these strin
            line with spaces ' ' replaced by underscores. For long commands, this is a
            hash of the command line.
 
-=item C<-T>
+=item C<--dont-test-for-handler|-T>
 
 Do not test scheduler before submitting jobs (qsub handler only).
 
