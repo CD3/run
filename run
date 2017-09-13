@@ -876,6 +876,13 @@ create a submission script for each job and subit the scripts to the scheduler.
 This is handy if you want to just quickly submit a basic job that does not
 require a complex submission script.
 
+=item C<qsub>
+
+This handler uses the C<condor_submit> command to submit jobs to an htcondor
+pool. htcondor is a high-throughput computing framework used to manage a set (pool)
+of desktop computers and run jobs on idle machines.
+See https://research.cs.wisc.edu/htcondor/ for more details.
+
 =item C<gnuparallel>
 
 This handler uses the C<parallel> command, from the gnuparallel project. C<parallel> is a
@@ -976,6 +983,10 @@ Block until all jobs have finished running (only effects qsub handler).
 
 Use FILENAME as template for the run script. The template script will be "rendered"
 by replacing a few special strings. Your script may all, or none, of these strings:
+
+=item C<--readme|-R>
+
+Generate a README.pod file.
 
 <%CMD%>    The command line (command plus arguments) that is to be run.
 <%SCRIPT%> The set of commands that C<run> would execute. These include date
