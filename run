@@ -27,10 +27,10 @@ cd <%WORKDIR%>
 echo "CMD: <%CMD%>"
 echo "ARGS: <%ARGS%>"
 echo -n "BEGIN: "
-date +%Y%m%d %H:%M:%S;
+date +"%Y%m%d %H:%M:%S"
 <%CMD%> <%ARGS%>
 echo -n "END:   "
-date +%Y%m%d %H:%M:%S
+date +%"Y%m%d %H:%M:%S"
 EOF
 
 $run_script_templates{'PBS'} = <<'EOF';
