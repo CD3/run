@@ -20,6 +20,7 @@ use Data::Dumper;
 $debug = 0;
 
 %run_script_templates = ();
+
 $run_script_templates{'serial'} = <<'EOF';
 <%SHEBANG%>
 
@@ -31,6 +32,17 @@ date +%Y%m%d %H:%M:%S;
 <%CMD%> <%ARGS%>
 echo -n "END:   "
 date +%Y%m%d %H:%M:%S
+EOF
+
+$run_script_templates{'htcondor'} = <<'EOF';
+Universe   = vanilla
+Executable = <%CMD%>
+Log        = <%NAME%>.log
+Output     = <%NAME%>.$(Process).out
+Error      = <%NAME%>.$(Process).error
+
+Arguments  = <%ARGS%>
+Queue
 EOF
 
 $run_script_templates{'PBS'} = <<'EOF';
@@ -63,15 +75,6 @@ $run_script_templates{'MOAB'} = <<'EOF';
 
 <%SERIAL%>
 
-EOF
-
-$run_script_templates{'htcondor'} = <<'EOF';
-Universe   = vanilla
-Executable = <%CMD%>
-Arguments  = <%ARGS%>
-Log        = simple.log
-Output     = simple.out
-Error      = simple.error
 EOF
 
 $shell = `which bash` =~ s/\s*$//gr;
@@ -486,6 +489,84 @@ sub xjobs {
 
 }
 
+# _     _                      _            
+#| |__ | |_ ___ ___  _ __   __| | ___  _ __ 
+#| '_ \| __/ __/ _ \| '_ \ / _` |/ _ \| '__|
+#| | | | || (_| (_) | | | | (_| | (_) | |   
+#|_| |_|\__\___\___/|_| |_|\__,_|\___/|_|   
+                                           
+
+sub htcondor_generate_scripts {
+  my ($args) = @_;
+
+  my @scripts = ();
+
+  $cmdi = 1;
+  for $CMD (@{$args->{cmds}})
+  {
+    # generate the script that we will submit.
+    my $name   = generate_name_for_cmd($CMD);
+    my $script = $run_script_templates{htcondor};
+    $script = read_file($opt_template) if( defined( $opt_template ) );
+
+    $script =~ s/<%SHEBANG%>/$shebang/g;
+    $script =~ s/<%NAME%>/$name/g;
+    $script =~ s/<%SHELL%>/$shell/g;
+    $script =~ s/<%CMD%>/$CMD/g;
+    $script =~ s/<%ARGS%>//g;
+
+    push @scripts, write_script( $cmdi++, $script );
+
+  }
+
+  return @scripts;
+}
+
+sub htcondor_run_scripts {
+
+  for my $scriptfn (@_)
+  {
+    my $cmd_to_run = "condor_submit $opt_handler_options $scriptfn";
+    system($cmd_to_run     ) if( not $opt_dry_run );
+    print( $cmd_to_run."\n") if(     $opt_dry_run );
+  }
+}
+
+sub htcondor {
+  my ($args) = @_;
+  if( scalar @{$args->{cmds}} == 0 ) {
+    # first of all, the condor_submit command needs to exist
+    my $e = cmd_exists('condor_submit');
+    
+    return 0 if( not $e );
+
+    # the condor_submit command exists
+    return 1;
+  }
+
+  # generate all the scripts first
+  if( $opt_args_are_run_scripts )
+  {
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
+  }
+  else
+  {
+    @scripts = htcondor_generate_scripts($args);
+  }
+
+  # now run them
+  htcondor_run_scripts(@scripts);
+
+  # if the block option is set
+  # block until all jobs have finished
+  if( $opt_block )
+  {
+    # TODO: Figure out how to block!
+  }
+
+}
+
 
 #               _       _ 
 # ___  ___ _ __(_) __ _| |
@@ -557,8 +638,9 @@ sub serial {
 
 my @handlers  = (
                   { name => "qsub"         , func => \&qsub        , help => "submit jobs to a scheduler" } ,
+                  { name => "htcondor"     , func => \&htcondor    , help => "submit jobs to a condor pool" } ,
                   { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
-                  { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility." } ,
+                  { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility" } ,
                   { name => "serial"       , func => \&serial      , help => "run jobs one after the other" } ,
                 );
 
