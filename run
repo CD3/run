@@ -23,7 +23,14 @@ $debug = 0;
 $run_script_templates{'serial'} = <<'EOF';
 <%SHEBANG%>
 
-<%SCRIPT%>
+cd <%WORKDIR%>
+echo "CMD: <%CMD%>"
+echo "ARGS: <%ARGS%>"
+echo -n "BEGIN: "
+date +%Y%m%d %H:%M:%S;
+<%CMD%> <%ARGS%>
+echo -n "END:   "
+date +%Y%m%d %H:%M:%S
 EOF
 
 $run_script_templates{'PBS'} = <<'EOF';
@@ -32,7 +39,7 @@ $run_script_templates{'PBS'} = <<'EOF';
 #PBS -N <%NAME%>
 #PBS -j oe
 
-<%SCRIPT%>
+<%SERIAL%>
 
 EOF
 
@@ -44,7 +51,7 @@ $run_script_templates{'SGE'} = <<'EOF';
 #$ -S <%SHELL%>
 #$ -cwd
 
-<%SCRIPT%>
+<%SERIAL%>
 
 EOF
 
@@ -54,8 +61,17 @@ $run_script_templates{'MOAB'} = <<'EOF';
 #MOAB -N <%NAME%>
 #MOAB -j oe
 
-<%SCRIPT%>
+<%SERIAL%>
 
+EOF
+
+$run_script_templates{'htcondor'} = <<'EOF';
+Universe   = vanilla
+Executable = <%CMD%>
+Arguments  = <%ARGS%>
+Log        = simple.log
+Output     = simple.out
+Error      = simple.error
 EOF
 
 $shell = `which bash` =~ s/\s*$//gr;
@@ -64,8 +80,6 @@ $shebang = "#! ".$shell;
 $verbose_level = 0;
 
 $arg_delim = ":";
-
-$date_fmt = "%Y%m%d %H:%M:%S";
 
 $script_prefix = "run_script-";
 $script_suffix = ".sh";
@@ -108,29 +122,35 @@ sub cmd_exists
   return !$e;
 }
 
+sub render_serial_script {
 
-sub build_skel_script
-{
-  my ($CMD) = @_;
-  my @lines = ();
+  my ($CMDANDARGS) = @_;
 
-  push @lines, "cd ".getcwd()."\n";
-  push @lines, "echo 'CMD: $CMD'\n";
-  push @lines, "echo -n 'BEGIN: '";
-  push @lines, "date +'$date_fmt'\n";
-  push @lines, "$CMD\n";
-  push @lines, "echo -n 'END:   '";
-  push @lines, "date +'$date_fmt'\n";
+  my($cmd,$args) = split /\s/, $CMDANDARGS, 2;
+  $args = "" if(!$args);
+  my $cwd = getcwd();
 
-  return join "\n", @lines;
+  my $name = generate_name_for_cmd($CMDANDARGS);
+
+  my $script = $run_script_templates{serial};
+  $script = read_file($opt_template) if( defined( $opt_template ) );
+
+  $script =~ s/<%SHEBANG%>/$shebang/g;
+  $script =~ s/<%WORKDIR%>/$cwd/g;
+  $script =~ s/<%CMD%>/$cmd/g;
+  $script =~ s/<%ARGS%>/$args/g;
+
+  return $script;
 }
 
 
 sub write_script
 {
+  my( $cmdi, @lines) = @_;
+
   my    $scriptfn = "${tempdir}/${script_prefix}${cmdi}${script_suffix}";
   open( $scriptfh,">".$scriptfn) or die "could not write submit script to temp file";
-  print $scriptfh join( "\n", @_ )."\n";
+  print $scriptfh join( "\n", @lines )."\n";
   close($scriptfh);
 
   return $scriptfn;
@@ -210,27 +230,27 @@ sub qsub_generate_scripts {
 
   my @scripts = ();
 
-  $cmdi = 0;
+  $cmdi = 1;
   for $CMD (@{$args->{cmds}})
   {
-    $cmdi = $cmdi+1;
-
-
-
     # generate the script that we will submit.
 
     my $name   = generate_name_for_cmd($CMD);
     my $script = $run_script_templates{$scheduler};
     $script = read_file($opt_template) if( defined( $opt_template ) );
-    my $text   = join("\n",build_skel_script( $CMD ));
+    my $shebang_save = $shebang;
+    $shebang = "";
+    my $serial_script = render_serial_script( $CMD );
+    $shebang = $shebang_save;
 
     $script =~ s/<%SHEBANG%>/$shebang/g;
     $script =~ s/<%NAME%>/$name/g;
     $script =~ s/<%SHELL%>/$shell/g;
-    $script =~ s/<%SCRIPT%>/$text/g;
+    $script =~ s/<%SERIAL%>/$serial_script/g;
     $script =~ s/<%CMD%>/$CMD/g;
+    $script =~ s/<%ARGS%>/"/g;
 
-    push @scripts, write_script( $script );
+    push @scripts, write_script( $cmdi++, $script );
 
   }
 
@@ -312,17 +332,11 @@ sub qsub {
 sub gnuparallel_generate_scripts {
 
   my @scripts = ();
-  $cmdi = 0;
+  $cmdi = 1;
   for $CMD (@_)
   {
-    $cmdi = $cmdi+1;
-
-    my $script = $run_script_templates{serial};
-    $script = read_file($opt_template) if( defined( $opt_template ) );
-    my $text = build_skel_script( $CMD );
-    $script =~ s/<%SHEBANG%>/$shebang/g;
-    $script =~ s/<%SCRIPT%>/$text/g;
-    my $scriptfn = write_script($script);
+    my $script = render_serial_script($CMD);
+    my $scriptfn = write_script($cmdi++,$script);
     chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
   }
@@ -479,23 +493,15 @@ sub xjobs {
 #\__ \  __/ |  | | (_| | |
 #|___/\___|_|  |_|\__,_|_|
                          
-
 sub serial_generate_scripts {
   my @scripts = ();
 
-  $cmdi = 0;
-  for $CMD (@_)
+  $cmdi = 1;
+  for $CMDANDARGS (@_)
   {
-    $cmdi = $cmdi+1;
+    $script = render_serial_script($CMDANDARGS);
 
-    my $name = generate_name_for_cmd($CMD);
-
-    my $script = $run_script_templates{serial};
-    $script = read_file($opt_template) if( defined( $opt_template ) );
-    my $text = build_skel_script( $CMD );
-    $script =~ s/<%SHEBANG%>/$shebang/g;
-    $script =~ s/<%SCRIPT%>/$text/g;
-    my $scriptfn = write_script($script);
+    my $scriptfn = write_script($cmdi++,$script);
     chmod 0755, $scriptfn;
     push @scripts, $scriptfn;
 
@@ -506,21 +512,9 @@ sub serial_generate_scripts {
 
 sub serial_run_scripts {
 
-  $cmdi = 0;
   for $scriptfn (@_)
   {
-    $cmdi++;
-    # the script will echo the command that it runs, so we can easily pull out the command
-    my $cmd = "UNKNOWN";
-    open(FILE, "<$scriptfn");
-    my @cmd_line = grep(/echo 'CMD:/, <FILE>);
-    close(FILE);
-    if( $cmd_line[0] =~ /^echo 'CMD:\s(.*)'$/ )
-    {
-      $cmd = $1;
-    }
-    my $name = generate_name_for_cmd($cmd);
-    my $stdoutfn = "_run-${name}.o${cmdi}";
+    my $stdoutfn = "_".basename $scriptfn.".o";
     my $cmd_to_run  = $scriptfn . ($opt_output ? " >> ${stdoutfn}" : "" );
 
     system($cmd_to_run     ) if( not $opt_dry_run );
