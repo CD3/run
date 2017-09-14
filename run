@@ -41,8 +41,11 @@ Log        = <%NAME%>.log
 Output     = <%NAME%>.$(Process).out
 Error      = <%NAME%>.$(Process).error
 
-Arguments  = <%ARGS%>
-Queue
+# Arguments  = <%ARGS%>
+# Queue
+#
+# Arguments and Queue commands will be appended rather
+# than rendered.
 EOF
 
 $run_script_templates{'PBS'} = <<'EOF';
@@ -501,11 +504,17 @@ sub htcondor_generate_scripts {
 
   my @scripts = ();
 
+
+  # condor allows for the same command to be ran with multiple set of arguments.
+  # we may want to 
+
   $cmdi = 1;
-  for $CMD (@{$args->{cmds}})
+  for $CMDANDARGS (@{$args->{cmds}})
   {
+    my($CMD,$ARGS) = split /\s/, $CMDANDARGS, 2;
+
     # generate the script that we will submit.
-    my $name   = generate_name_for_cmd($CMD);
+    my $name   = generate_name_for_cmd($CMDANDARGS);
     my $script = $run_script_templates{htcondor};
     $script = read_file($opt_template) if( defined( $opt_template ) );
 
@@ -513,7 +522,12 @@ sub htcondor_generate_scripts {
     $script =~ s/<%NAME%>/$name/g;
     $script =~ s/<%SHELL%>/$shell/g;
     $script =~ s/<%CMD%>/$CMD/g;
-    $script =~ s/<%ARGS%>//g;
+
+    $script .= "\n";
+    $script .= "Arguments = $ARGS" if($ARGS);
+    $script .= "\n";
+    $script .= "Queue";
+    $script .= "\n";
 
     push @scripts, write_script( $cmdi++, $script );
 
