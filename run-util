@@ -16,7 +16,7 @@ use List::Util qw/max/;
 
 $debug = 0;
 $verbose_level = 0;
-$VERSION = '0.2.0';
+$VERSION = '0.3.0';
 
 #           _                     _   _                 
 # ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 

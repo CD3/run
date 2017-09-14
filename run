@@ -862,7 +862,7 @@ exit(0);
 
 run - Quickly queue and run jobs from the command line.
 
-VERSION: 0.2.0
+VERSION: 0.3.0
 
 =head1 DESCRIPTION
 
