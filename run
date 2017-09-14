@@ -682,6 +682,7 @@ our(
   $opt_readme,
   $opt_templateemplate,
   $opt_dont_test_for_handler,
+  $opt_print_template,
   $opt_verbose,
   );
 
@@ -708,6 +709,7 @@ GetOptions( "help|h" => \$opt_help,
             "readme|R" => \$opt_readme,
             "template|t=s" => \$opt_templateemplate,
             "dont-test-for-handler|T" => \$opt_dont_test_for_handler,
+            "print-template" => \$opt_print_template,
             "verbose|v+" => \$opt_verbose,
           ) || pod2usage(-verbose => 2);
 
@@ -834,6 +836,12 @@ if( $debug )
   {
     print "\t'$CMD'\n"
   }
+}
+
+if( $opt_print_template )
+{
+  print $run_script_templates{$handler->{name}};
+  exit(0)
 }
 
 $handler->{func}->({args => \@handler_args, cmds => \@CMDS});
@@ -1013,6 +1021,9 @@ Generate a README.pod file.
 
 Do not test scheduler before submitting jobs (qsub handler only).
 
+=item C<--print-template>
+
+Print the template script and exit.
 
 =back
 
