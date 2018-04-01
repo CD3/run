@@ -653,8 +653,8 @@ sub serial {
 my @handlers  = (
                   { name => "qsub"         , func => \&qsub        , help => "submit jobs to a scheduler" } ,
                   { name => "htcondor"     , func => \&htcondor    , help => "submit jobs to a condor pool" } ,
-                  { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
                   { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility" } ,
+                  { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
                   { name => "serial"       , func => \&serial      , help => "run jobs one after the other" } ,
                 );
 
