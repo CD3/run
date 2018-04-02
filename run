@@ -80,6 +80,17 @@ $run_script_templates{'MOAB'} = <<'EOF';
 
 EOF
 
+$run_script_templates{'SLURM'} = <<'EOF';
+<%SHEBANG%>
+
+#SBATCH --job-name=<%NAME%>
+#SBATCH -o <%NAME%>.out
+
+<%SERIAL%>
+
+EOF
+
+
 $shell = `which bash` =~ s/\s*$//gr;
 $shebang = "#! ".$shell;
 
@@ -324,6 +335,109 @@ sub qsub {
       $wait = 0 unless( $out =~ /^job_number:/m );
     }
   }
+
+}
+
+#     _           _       _     
+# ___| |__   __ _| |_ ___| |__  
+#/ __| '_ \ / _` | __/ __| '_ \ 
+#\__ \ |_) | (_| | || (__| | | |
+#|___/_.__/ \__,_|\__\___|_| |_|
+
+
+sub sbatch_generate_scripts {
+  my ($args) = @_;
+
+  my @scripts = ();
+
+  $cmdi = 1;
+  for $CMD (@{$args->{cmds}})
+  {
+    # generate the script that we will submit.
+
+    my $name   = generate_name_for_cmd($CMD);
+    my $script = $run_script_templates{"SLURM"};
+    $script = read_file($opt_template) if( defined( $opt_template ) );
+    my $shebang_save = $shebang;
+    $shebang = "";
+    my $serial_script = render_serial_script( $CMD );
+    $shebang = $shebang_save;
+
+    $script =~ s/<%SHEBANG%>/$shebang/g;
+    $script =~ s/<%NAME%>/$name/g;
+    $script =~ s/<%SHELL%>/$shell/g;
+    $script =~ s/<%SERIAL%>/$serial_script/g;
+    $script =~ s/<%CMD%>/$CMD/g;
+    $script =~ s/<%ARGS%>/"/g;
+
+    push @scripts, write_script( $cmdi++, $script );
+
+  }
+
+  return @scripts;
+}
+
+sub sbatch_run_scripts {
+
+  for my $scriptfn (@_)
+  {
+    my $cmd_to_run = "sbatch $opt_handler_options $scriptfn";
+    system($cmd_to_run     ) if( not $opt_dry_run );
+    print( $cmd_to_run."\n") if(     $opt_dry_run );
+  }
+}
+
+sub sbatch {
+  my ($args) = @_;
+  if( scalar @{$args->{cmds}} == 0 ) {
+    # first of all, the sbatch command needs to exist
+    my $e = cmd_exists('sbatch');
+    
+    return 0 if( not $e );
+
+    # but, just because the sbatch command exists, does not mean
+    # it will work. we can try to submit simple job through the
+    # standard input.
+    unless($opt_dont_test_for_handler)
+    {
+      $e = system('echo "hostname" | sbatch > /dev/null 2>&1');
+
+      return 0 if( $e );
+    }
+
+    # the qsub command exists, and it appears to be accepting commands,
+    # so it looks like we can give it the OK.
+    return 1;
+  }
+
+  # generate all the scripts first
+  if( $opt_args_are_run_scripts )
+  {
+    # if the script names does not contain a relative or absolute path, we need to add one.
+    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
+  }
+  else
+  {
+    @scripts = sbatch_generate_scripts($args);
+  }
+
+  # now run them
+  sbatch_run_scripts(@scripts);
+
+  # if the block option is set
+  # block until all jobs have finished
+  #if( $opt_block )
+  #{
+    #my $jobs = join ",", map { generate_name_for_cmd($_); } @{$args->{cmds}};
+    #my $wait = 1;
+    #while( $wait )
+    #{
+      ## sleep for 10 seconds
+      #sleep(10);
+      #my $out = `qstat -j $jobs`;
+      #$wait = 0 unless( $out =~ /^job_number:/m );
+    #}
+  #}
 
 }
 
@@ -651,7 +765,8 @@ sub serial {
 
 
 my @handlers  = (
-                  { name => "qsub"         , func => \&qsub        , help => "submit jobs to a scheduler" } ,
+                  { name => "sbatch"       , func => \&sbatch      , help => "submit jobs to a SLURM scheduler" } ,
+                  { name => "qsub"         , func => \&qsub        , help => "submit jobs to a PBS-compliant scheduler" } ,
                   { name => "htcondor"     , func => \&htcondor    , help => "submit jobs to a condor pool" } ,
                   { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility" } ,
                   { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
@@ -890,10 +1005,20 @@ in the command output, such as a time stamp for timing data.
 
 =over
 
+=item C<sbatch>
+
+This handler uses the C<sbatch> command. C<sbatch> is used to submit jobs to
+an HPC cluster using the Slurm workload manager, which is become popular
+in recent years. The C<sbatch> handler will automatically
+create a submission script for each job and subit the scripts to the scheduler.
+This is handy if you want to just quickly submit a basic job that does not
+require a complex submission script.
+
+
 =item C<qsub>
 
 This handler uses the C<qsub> command. C<qsub> is used to submit jobs to several HPC
-schedulers including PBS, MOAB, and SGE. The qsub handler will automatically
+schedulers including PBS, MOAB, and SGE. The C<qsub> handler will automatically
 create a submission script for each job and subit the scripts to the scheduler.
 This is handy if you want to just quickly submit a basic job that does not
 require a complex submission script.
