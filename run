@@ -927,7 +927,7 @@ else
   foreach $hdlr ( @handlers )
   {
      message(2, "Checking '$hdlr->{name}' handler..." );
-     if( $hdlr->{'func'}->() )
+     if( $hdlr->{'func'}->({cmds => []}) )
      {
        message(2, "valid\n"  );
        $handler = $hdlr;
