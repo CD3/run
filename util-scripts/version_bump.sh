@@ -5,6 +5,8 @@ VERSION=$1
 if [[ -z $VERSION ]]
 then
   echo "ERROR: version number *must* be given."
+  echo "Current tags:"
+  git tag | cat
   exit 1
 fi
 
@@ -14,8 +16,8 @@ then
   exit 1
 fi
 
-sed -i "s/\$VERSION\s*=\s*'.*'/\$VERSION = '$VERSION'/" run-util
 sed -i "s/VERSION:\s*[0-9\.]\+/VERSION: $VERSION/" run
-git add run run-util
+./run -m > README.md
+git add run README.md
 git commit -m "version bump: $VERSION"
 git tag $VERSION
