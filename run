@@ -1,28 +1,290 @@
-#!/usr/bin/perl -w
+#! /usr/bin/env python3
+"""
+# NAME
+run - Quickly queue and run jobs from the command line.
 
-use File::Temp qw/tempfile tempdir/;
-use File::Basename;
-use File::Copy;
-use Pod::Usage;
-use Getopt::Long qw(:config no_ignore_case);
-use Cwd;
-use Data::Dumper;
+# VERSION: 0.3.0
+
+# DESCRIPTION
+
+  `run` is a perl script that will run a set of commands.
+  It is primarily useful for running commands that are expected to run for a long
+  time, such as physics simulations.  `run` uses "handlers" to actually run the
+  commands, and tries to automatically select the best handler to use to complete
+  the runs as quickly as possible. For example, if you are working on a cluster
+  and the `qsub` command exists, `run` will create submission scripts and submit
+  them to the scheduler.  If the `qsub` command does not exist, then other handlers
+  are checked. For example, if the `parallel` (gnu parallel) or `xjobs` commands
+  are found, they can be used to run all commands in parallel.
+
+  If all other handlers fail, `run` will fall back to just running each command
+  in serial, one after the other.  This turns out to still be useful, because if
+  you have a set of simulations that you need to perform, you can use `run` to
+  automatically run each simulation after one has completed.
+
+  All handlers will first create a script wrapper for each command to run and
+  then run this script.  This is done so that extra information can be embedded
+  in the command output, such as a time stamp for timing data.
+
+
+  Current Handlers
+
+  `slurm`
+
+  This handler uses the `sbatch` command. `sbatch` is used to submit jobs to
+  an HPC cluster using the Slurm workload manager, which is become popular
+  in recent years. The `sbatch` handler will automatically
+  create a submission script for each job and subit the scripts to the scheduler.
+  This is handy if you want to just quickly submit a basic job that does not
+  require a complex submission script.
+
+
+  `gnuparallel`
+
+  This handler uses the `parallel` command, from the gnuparallel project. `parallel` is a
+  perl script that runs multiple jobs in parallel and even supports running jobs on remote computers
+  (not supported by run). It attempts to work as a parallel version of `xargs`.
+
+  `xjobs`
+
+  This handler uses the `xjobs` command. `xjobs` is a small C program written by Thomas Maier-Komer that
+  that a command multiple times with different arguments in parallel.
+  It strives to be a parallel version of `xargs`.
+
+  `serial`
+
+  This handler just runs each job directly, one after the other.
+
+
+  Possible Future Handlers
+
+  - `pexec` another tool for running jobs in parallel on a workstation.
+  - `pbs` a common (maybe the most common) scheduler interface used on clusters.
+
+
+  Note that `run` does not do load balancing. Each handler is given the list of commands to run, and they are responsible
+  for managing the system workload.
+
+# EXAMPLES
+
+  run 3 scripts
+
+      > run script1.sh : script2.sh : script3.sh
+
+  run 3 BTEC runs
+
+      > run -C BTECthermal config1.btec : BTECthermal config2.btec : BTECthermal config3.btec
+
+  run BTEC for all config files in the current directory
+
+      > run -C BTECthermal -d' ' config*.btec
+
+  run 3 scripts using the gnuparallel handler
+
+      > run -H gnuparallel script1.sh : script2.sh : script3.sh
+
+  get a list of all handlers
+
+      > run -l
+
+# INSTALLATION
+
+  `run` is a single python script that uses only standard library modules.
+  To install it, just place it somewhere in your PATH.
+
+
+# LICENSE
+
+  The MIT License (MIT)
+
+  Copyright (c) 2015-present CD Clark III
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+"""
+
+from __future__ import print_function
+import subprocess
+import os, sys, inspect, logging, shutil, re, json, hashlib, tempfile, stat, io
+from argparse import ArgumentParser
+
+handler_priority = [
+    'slurm',
+    'xjobs',
+    'gnuparallel',
+  ]
 
 
 
-#       _       _           _                       
-#  __ _| | ___ | |__   __ _| | __   ____ _ _ __ ___ 
-# / _` | |/ _ \| '_ \ / _` | | \ \ / / _` | '__/ __|
-#| (_| | | (_) | |_) | (_| | |  \ V / (_| | |  \__ \
-# \__, |_|\___/|_.__/ \__,_|_|   \_/ \__,_|_|  |___/
-# |___/                                             
+class workdir(object):
+  '''
+  A context class to temporarily change working directory.
+  '''
+  def __init__(self, path):
+    self.old_dir = os.getcwd()
+    self.new_dir = path
 
-$debug = 0;
+  def __enter__(self):
+    if self.new_dir is not None:
+      os.chdir(self.new_dir)
 
-%run_script_templates = ();
+  def __exit__(self, *args):
+    if self.new_dir is not None:
+      os.chdir(self.old_dir)
 
-$run_script_templates{'serial'} = <<'EOF';
-<%SHEBANG%>
+def run(cmd,wd=None,capture_output=False,input=None):
+  '''Run a command and return its exit status, standard output, and standard error.'''
+  try: input = input.encode('utf-8')
+  except: pass 
+
+  stdout = None
+  if capture_output:
+    stdout = subprocess.PIPE
+
+  with workdir(wd):
+    c = subprocess.run( cmd, shell=True, executable="/bin/bash", input=input, stdout=stdout,stderr=subprocess.STDOUT)
+
+  r = c.returncode
+  o = c.stdout
+
+  try:
+    o = o.decode('utf-8')
+  except: pass
+
+  return r,o
+
+def qx(cmd,wd=None):
+  '''Run a command and returns its output.'''
+  r,o = run(cmd,wd)
+  return o
+
+def render(text,context,opts=dict()):
+  for k in context:
+    text = text.replace("<%"+k+"%>",context[k])
+  # remove any left over keys
+  if 'remove_missing_keys' not in opts or opts['remove_missing_keys']:
+    text = re.sub("<%.*%>","",text)
+
+  return text
+
+def generate_name(cmd_str):
+  if len(cmd_str) > 20:
+    return "_"+hashlib.sha1(cmd_str.encode("utf-8")).hexdigest()
+
+  return cmd_str.replace(" ","_")
+
+#  _   _                 _ _               
+# | | | | __ _ _ __   __| | | ___ _ __ ___ 
+# | |_| |/ _` | '_ \ / _` | |/ _ \ '__/ __|
+# |  _  | (_| | | | | (_| | |  __/ |  \__ \
+# |_| |_|\__,_|_| |_|\__,_|_|\___|_|  |___/
+                                         
+
+
+
+class Handler(object):
+  '''
+  Base class for handlers. New handlers should subclass this class and provide the following methods:
+
+  REQUIRED:
+    test() - return true if the handle can handle.
+    template() - return a template string for generating submit scripts.
+    run() - a method that can run all of the scripts in stored in self.submit_scripts member.
+  OPTIONAL:
+    default_context() - return a dict containing context entries for template file rendering.
+  '''
+  def __init__(self,opts):
+    self.opts = opts
+    self.submit_scripts = list()
+    self.tmpdir = None
+
+
+  @staticmethod
+  def test():
+    return False
+
+  def default_context(self):
+    return dict()
+
+  def generate_scripts(self,commands):
+
+    # get user-supplied context
+    user_context = dict()
+    if self.opts.context_file:
+      with open(self.opts.context_file,'r') as f:
+        user_context.update(json.load(f))
+    user_context.update(json.loads(self.opts.context))
+
+
+    currdir = os.getcwd()
+    self.tmpdir = tempfile.mkdtemp(prefix='run-')
+    logging.info("using %s for temporary storage"%self.tmpdir)
+    # create submission scripts. one for each command.
+    for command in commands:
+      context = self.default_context()
+      try:
+        context['CMD'],context['ARGS'] = command.strip().split(maxsplit=1)
+      except:
+        context['CMD'] = command
+        context['ARGS'] = ""
+      context['WORKDIR'] = currdir
+      context['NAME'] = generate_name(command)
+
+      context.update(user_context)
+
+      # use template file if provided by user, otherwise use template provided by the handler.
+      if self.opts.template:
+        with open(self.opts.template,'r') as f:
+          template = f.read()
+      else:
+        template = handler.template()
+
+      if self.opts.print_template:
+        print(template)
+        sys.exit(0)
+
+      submit_script_text = render(template,context)
+
+      submit_script = "run-submit_script.%d"%len(self.submit_scripts)
+      with workdir(self.tmpdir):
+        with open(submit_script,'w') as f:
+          f.write(submit_script_text)
+        st = os.stat(submit_script)
+        os.chmod(submit_script, st.st_mode | stat.S_IEXEC)
+        self.submit_scripts.append( os.path.abspath( submit_script ) )
+      
+  def cleanup(self):
+    if self.opts.leave_tempdir:
+      print("Temporary directory '%s' left behind."%self.tmpdir)
+    else:
+      shutil.rmtree(self.tmpdir)
+  
+
+
+
+class SerialHandler(Handler):
+  @staticmethod
+  def test():
+    # we can always run jobs in serial
+    return True
+
+  def template(self):
+    return '''#! <%INTERPRETER%>
 
 cd <%WORKDIR%>
 echo "CMD: <%CMD%>"
@@ -32,1199 +294,211 @@ date +"%Y%m%d %H:%M:%S"
 <%CMD%> <%ARGS%>
 echo -n "END:   "
 date +%"Y%m%d %H:%M:%S"
-EOF
+'''
 
-$run_script_templates{'htcondor'} = <<'EOF';
-Universe   = vanilla
-Executable = <%CMD%>
-Log        = <%NAME%>.log
-Output     = <%NAME%>.$(Process).out
-Error      = <%NAME%>.$(Process).error
+  def default_context(self):
+    context = dict()
+    context['INTERPRETER'] = shutil.which("bash")
 
-# Arguments  = <%ARGS%>
-# Queue
-#
-# Arguments and Queue commands will be appended rather
-# than rendered.
-EOF
+    return context
 
-$run_script_templates{'PBS'} = <<'EOF';
-<%SHEBANG%>
 
-#PBS -N <%NAME%>
-#PBS -j oe
+  def run(self):
+    for file in self.submit_scripts:
+      print("Running %s"%(file))
+      run(file)
 
-<%SERIAL%>
 
-EOF
 
-$run_script_templates{'SGE'} = <<'EOF';
-<%SHEBANG%>
+class xJobsHandler(SerialHandler):
+  @staticmethod
+  def test():
+    return shutil.which("xjobs") is not None
 
-#$ -N <%NAME%>
-#$ -j y
-#$ -S <%SHELL%>
-#$ -cwd
+  def run(self):
+    run("xjobs", input=" ".join(self.submit_scripts))
 
-<%SERIAL%>
 
-EOF
+class GnuParallelHandler(SerialHandler):
+  @staticmethod
+  def test():
+    return shutil.which("parallel") is not None
 
-$run_script_templates{'MOAB'} = <<'EOF';
-<%SHEBANG%>
+  def run(self):
+    run("parallel ::: "+" ".join(self.submit_scripts))
 
-#MOAB -N <%NAME%>
-#MOAB -j oe
+class SlurmHandler(SerialHandler):
+  @staticmethod
+  def test():
+    return shutil.which("sbatch") is not None
 
-<%SERIAL%>
+  def run(self):
+    for file in self.submit_scripts:
+      run("sbatch %s"%file)
 
-EOF
+  def default_context(self):
+    context = dict()
+    context['INTERPRETER'] = shutil.which("bash")
 
-$run_script_templates{'SLURM'} = <<'EOF';
-<%SHEBANG%>
+    return context
+
+
+  def template(self):
+    serial_script = re.sub("#!.*","",super().template())
+
+    return '''#! <%INTERPRETER%>
 
 #SBATCH --job-name=<%NAME%>
-#SBATCH -o <%NAME%>.out
+#SBATCH --output=<%NAME%>.out
+#SBATCH --time=0-01:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --nodes=1
+##SBATCH --mem-per-cpu=1G
 
-<%SERIAL%>
+{SERIAL}
 
-EOF
-
-
-$shell = `which bash` =~ s/\s*$//gr;
-$shebang = "#! ".$shell;
-
-$verbose_level = 0;
-
-$arg_delim = ":";
-
-$script_prefix = "run_script-";
-$script_suffix = ".sh";
-
-$stdoutfn_tmpl = "run-%s.o%d";
-#$stderrfn_tmpl = "run-%s.e%d";
-
-#           _                     _   _                 
-# ___ _   _| |__  _ __ ___  _   _| |_(_)_ __   ___  ___ 
-#/ __| | | | '_ \| '__/ _ \| | | | __| | '_ \ / _ \/ __|
-#\__ \ |_| | |_) | | | (_) | |_| | |_| | | | |  __/\__ \
-#|___/\__,_|_.__/|_|  \___/ \__,_|\__|_|_| |_|\___||___/
-                                                       
-
-sub write_readme
-{
-  system("perldoc -u $0 > README.pod");
-}
-
-sub read_file
-{
-  my ($filename) = @_;
-  my $script = "";
-  open(my $fh, '<', $filename) or die "Cannot open file $filename";
-  {
-    local $/;
-    $script = <$fh>;
-  }
-  close($fh);
-
-  return $script;
-}
+'''.format(SERIAL=serial_script)
 
 
-sub cmd_exists
-{
-  my $cmd = shift;
-  my $e = system("which $cmd > /dev/null 2>&1");
 
-  return !$e;
-}
-
-sub render_serial_script {
-
-  my ($CMDANDARGS) = @_;
-
-  my($cmd,$args) = split /\s/, $CMDANDARGS, 2;
-  $args = "" if(!$args);
-  my $cwd = getcwd();
-
-  my $name = generate_name_for_cmd($CMDANDARGS);
-
-  my $script = $run_script_templates{serial};
-  $script = read_file($opt_template) if( defined( $opt_template ) );
-
-  $script =~ s/<%SHEBANG%>/$shebang/g;
-  $script =~ s/<%WORKDIR%>/$cwd/g;
-  $script =~ s/<%CMD%>/$cmd/g;
-  $script =~ s/<%ARGS%>/$args/g;
-
-  return $script;
-}
+#  __  __       _       
+# |  \/  | __ _(_)_ __  
+# | |\/| |/ _` | | '_ \ 
+# | |  | | (_| | | | | |
+# |_|  |_|\__,_|_|_| |_|
+                      
 
 
-sub write_script
-{
-  my( $cmdi, @lines) = @_;
-
-  my    $scriptfn = "${tempdir}/${script_prefix}${cmdi}${script_suffix}";
-  open( $scriptfh,">".$scriptfn) or die "could not write submit script to temp file";
-  print $scriptfh join( "\n", @lines )."\n";
-  close($scriptfh);
-
-  return $scriptfn;
-}
+clsmembers = [ cls for cls in inspect.getmembers(sys.modules[__name__], inspect.isclass) if cls[0].lower() != "handler" and cls[0].lower().endswith("handler") ]
+handlers = { k.lower().replace("handler",""):v for (k,v) in clsmembers}
+if __name__ == "__main__":
+  parser = ArgumentParser(description="Quickly queue and run jobs from the command-line.")
 
 
-sub generate_name_for_cmd
-{
-  my $CMD = join(" ",@_);
-  my $name = "_".$CMD;
-  # replace all special characters
-  $name =~ s/\/+/--/g;
-  $name =~ s/[^a-zA-Z0-9]/_/g;
+  # old options
+  # "block|B" => \$opt_block,
+  # "args-are-run-scripts|F" => \$opt_args_are_run_scripts,
+  # "leave-run-scripts|f" => \$opt_leave_run_scripts,
+  # "handler_options|O=s" => \$opt_handler_options,
+  # "list-handlers|l" => \$opt_list_handlers,
+  # "output|o" => \$opt_output,
+  # "readme|R" => \$opt_readme,
+  # "verbose|v+" => \$opt_verbose,
 
-  # if the filename is longer than 40 characters, then
-  # create an md5 sum instead.
-  $name = "_".(split / /, `echo $CMD | md5sum`)[0] if( length $name > 40 );
+  parser.add_argument("arguments",
+                      action="store",
+                      nargs='*',
+                      default=list(),
+                      help="A colon-delimited list of commands to run. Note that the delimiter character can be specified with the --delimiter option." )
 
-  return $name;
-}
+  parser.add_argument("-m", "--manual",
+                      action="store_true",
+                      help="Print manual and exit." )
+
+  parser.add_argument("-d", "--delimiter",
+                      action="store",
+                      default=":",
+                      help="Use DELIMITER to delimiter commands." )
+
+  parser.add_argument("-H", "--handler",
+                      action="store",
+                      help="Use HANDLER to submit jobs." )
+
+  parser.add_argument("-t", "--template",
+                      action="store",
+                      help="Use TEMPLATE for submission script template." )
+
+  parser.add_argument("-l","--list-handlers",
+                      action="store_true",
+                      default=False,
+                      help="List supported handlers and exit." )
+
+  parser.add_argument("--debug",
+                      action="store_true",
+                      default=False,
+                      help="Turn on debugging output." )
+
+  parser.add_argument("--print-template",
+                      action="store_true",
+                      default=False,
+                      help="Print template submit script that will be used and exit." )
+
+  parser.add_argument("--leave-tempdir",
+                      action="store_true",
+                      default=False,
+                      help="Leave the temperary directory used to write submit scripts." )
+
+  parser.add_argument("-n", "--dry-run",
+                      action="store_true",
+                      default=False,
+                      help="Dry run. Don't actuall run submit scripts." )
+
+  parser.add_argument("-C", "--command",
+                      action="store",
+                      default="",
+                      help="Prepend COMMAND to all commands before running." )
+
+  parser.add_argument("--context",
+                      action="store",
+                      default="{}",
+                      help="A JSON formatted string containing key=value pairs that will be added to the context when rendering the submit script." )
+
+  parser.add_argument("--context-file",
+                      action="store",
+                      help="A JSON file containing key=value pairs that will be added to the context when rendering the submit script." )
 
 
-sub message
-{
-  my $level = shift;
-  print "MSG($level): ".join " ", @_  if( $level <= $verbose_level );
-}
+  args = parser.parse_args()
+
+  if args.manual:
+    print(__doc__)
+    sys.exit()
+
+  if args.list_handlers:
+    print("{:15}{:15}".format("Handler","Available"))
+    print("{:=<30}".format(""))
+    for h in handlers:
+      print("{:15}{:15}".format(h,"yes" if handlers[h].test() else "no" ))
+    sys.exit()
 
 
-# _                     _ _               
-#| |__   __ _ _ __   __| | | ___ _ __ ___ 
-#| '_ \ / _` | '_ \ / _` | |/ _ \ '__/ __|
-#| | | | (_| | | | | (_| | |  __/ |  \__ \
-#|_| |_|\__,_|_| |_|\__,_|_|\___|_|  |___/
-                                         
-# all handlers need to follow a special convension:
-# - if called with no arguments, return true if the handler can handle
-# remember that shell commands return 0 ON SUCESS.
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+
+  commands = [ (args.command+" "+cmd.strip()).strip() for cmd in " ".join(args.arguments).split(args.delimiter) ]
 
 
-# _                       _       _            
-#| |_ ___ _ __ ___  _ __ | | __ _| |_ ___  ___ 
-#| __/ _ \ '_ ` _ \| '_ \| |/ _` | __/ _ \/ __|
-#| ||  __/ | | | | | |_) | | (_| | ||  __/\__ \
-# \__\___|_| |_| |_| .__/|_|\__,_|\__\___||___/
-#                  |_|                         
+  if args.handler:
+    handler = args.handler
+  else:
+    # detect handlers
+    candidates = dict()
+    for h in handlers:
+      if handlers[h].test():
+        logging.info("detected %s handler"%h)
+        p = 1000
+        if h in handler_priority:
+          p = handler_priority.index(h)
+        candidates[p] = h
 
-
-sub HDLR_generate_scripts {
-}
-sub HDLR_run_scripts {
-}
-sub HDLR {
-}
-
-#                 _     
-#  __ _ ___ _   _| |__  
-# / _` / __| | | | '_ \ 
-#| (_| \__ \ |_| | |_) |
-# \__, |___/\__,_|_.__/ 
-#    |_|                
-
-sub qsub_generate_scripts {
-  my ($args) = @_;
-
-  # we need to figure out what scheduler is running so we can create the correct
-  # script
-  my $scheduler = "UNKNOWN";
-
-  $scheduler = "PBS";
-  $scheduler = "PBS"  if( cmd_exists( "pbsnodes" ) );
-  $scheduler = "MOAB" if( cmd_exists( "moabnodes" ) );
-  $scheduler = "SGE"  if( cmd_exists( "sge_qmaster" ) );
-  $scheduler = $args->{args}->[0] if( scalar @{$args->{args}} );
-
-  message( 1, "Scheduler detected: $scheduler\n");
-
-  my @scripts = ();
-
-  $cmdi = 1;
-  for $CMD (@{$args->{cmds}})
-  {
-    # generate the script that we will submit.
-
-    my $name   = generate_name_for_cmd($CMD);
-    my $script = $run_script_templates{$scheduler};
-    $script = read_file($opt_template) if( defined( $opt_template ) );
-    my $shebang_save = $shebang;
-    $shebang = "";
-    my $serial_script = render_serial_script( $CMD );
-    $shebang = $shebang_save;
-
-    $script =~ s/<%SHEBANG%>/$shebang/g;
-    $script =~ s/<%NAME%>/$name/g;
-    $script =~ s/<%SHELL%>/$shell/g;
-    $script =~ s/<%SERIAL%>/$serial_script/g;
-    $script =~ s/<%CMD%>/$CMD/g;
-    $script =~ s/<%ARGS%>/"/g;
-
-    push @scripts, write_script( $cmdi++, $script );
-
-  }
-
-  return @scripts;
-}
-
-sub qsub_run_scripts {
-
-  for my $scriptfn (@_)
-  {
-    my $cmd_to_run = "qsub $opt_handler_options $scriptfn";
-    system($cmd_to_run     ) if( not $opt_dry_run );
-    print( $cmd_to_run."\n") if(     $opt_dry_run );
-  }
-}
-
-sub qsub {
-  my ($args) = @_;
-  if( scalar @{$args->{cmds}} == 0 ) {
-    # first of all, the qsub command needs to exist
-    my $e = cmd_exists('qsub');
+    if len(candidates) < 1:
+      raise RuntimeError("No candidates found to handle jub submission")
     
-    return 0 if( not $e );
+    # take handler with the highest priotity
+    handler = [ candidates[h] for h in sorted(candidates) ][0]
 
-    # but, just because the qsub command exists, does not mean
-    # it will work. we can try to submit simple job through the
-    # standard input.
-    unless($opt_dont_test_for_handler)
-    {
-      $e = system('echo "hostname" | qsub > /dev/null 2>&1');
+  if handler not in handlers:
+    raise RuntimeError("Handler '%s' is not supported. Did you spell the name correctly?")
 
-      return 0 if( $e );
-    }
+  logging.info("using %s handler"%handler)
 
-    # the qsub command exists, and it appears to be accepting commands,
-    # so it looks like we can give it the OK.
-    return 1;
-  }
+  handler = handlers[handler](args)
+  handler.generate_scripts(commands)
+  if not args.dry_run:
+    handler.run()
+  handler.cleanup()
 
-  # generate all the scripts first
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = qsub_generate_scripts($args);
-  }
 
-  # now run them
-  qsub_run_scripts(@scripts);
 
-  # if the block option is set
-  # block until all jobs have finished
-  if( $opt_block )
-  {
-    my $jobs = join ",", map { generate_name_for_cmd($_); } @{$args->{cmds}};
-    my $wait = 1;
-    while( $wait )
-    {
-      # sleep for 10 seconds
-      sleep(10);
-      my $out = `qstat -j $jobs`;
-      $wait = 0 unless( $out =~ /^job_number:/m );
-    }
-  }
 
-}
-
-#     _           _       _     
-# ___| |__   __ _| |_ ___| |__  
-#/ __| '_ \ / _` | __/ __| '_ \ 
-#\__ \ |_) | (_| | || (__| | | |
-#|___/_.__/ \__,_|\__\___|_| |_|
-
-
-sub sbatch_generate_scripts {
-  my ($args) = @_;
-
-  my @scripts = ();
-
-  $cmdi = 1;
-  for $CMD (@{$args->{cmds}})
-  {
-    # generate the script that we will submit.
-
-    my $name   = generate_name_for_cmd($CMD);
-    my $script = $run_script_templates{"SLURM"};
-    $script = read_file($opt_template) if( defined( $opt_template ) );
-    my $shebang_save = $shebang;
-    $shebang = "";
-    my $serial_script = render_serial_script( $CMD );
-    $shebang = $shebang_save;
-
-    $script =~ s/<%SHEBANG%>/$shebang/g;
-    $script =~ s/<%NAME%>/$name/g;
-    $script =~ s/<%SHELL%>/$shell/g;
-    $script =~ s/<%SERIAL%>/$serial_script/g;
-    $script =~ s/<%CMD%>/$CMD/g;
-    $script =~ s/<%ARGS%>/"/g;
-
-    push @scripts, write_script( $cmdi++, $script );
-
-  }
-
-  return @scripts;
-}
-
-sub sbatch_run_scripts {
-
-  for my $scriptfn (@_)
-  {
-    my $cmd_to_run = "sbatch $opt_handler_options $scriptfn";
-    system($cmd_to_run     ) if( not $opt_dry_run );
-    print( $cmd_to_run."\n") if(     $opt_dry_run );
-  }
-}
-
-sub sbatch {
-  my ($args) = @_;
-  if( scalar @{$args->{cmds}} == 0 ) {
-    # first of all, the sbatch command needs to exist
-    my $e = cmd_exists('sbatch');
-    
-    return 0 if( not $e );
-
-    # but, just because the sbatch command exists, does not mean
-    # it will work. we can try to submit simple job through the
-    # standard input.
-    unless($opt_dont_test_for_handler)
-    {
-      $e = system('echo "hostname" | sbatch > /dev/null 2>&1');
-
-      return 0 if( $e );
-    }
-
-    # the qsub command exists, and it appears to be accepting commands,
-    # so it looks like we can give it the OK.
-    return 1;
-  }
-
-  # generate all the scripts first
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = sbatch_generate_scripts($args);
-  }
-
-  # now run them
-  sbatch_run_scripts(@scripts);
-
-  # if the block option is set
-  # block until all jobs have finished
-  #if( $opt_block )
-  #{
-    #my $jobs = join ",", map { generate_name_for_cmd($_); } @{$args->{cmds}};
-    #my $wait = 1;
-    #while( $wait )
-    #{
-      ## sleep for 10 seconds
-      #sleep(10);
-      #my $out = `qstat -j $jobs`;
-      #$wait = 0 unless( $out =~ /^job_number:/m );
-    #}
-  #}
-
-}
-
-
-#                                           _ _      _ 
-#  __ _ _ __  _   _   _ __   __ _ _ __ __ _| | | ___| |
-# / _` | '_ \| | | | | '_ \ / _` | '__/ _` | | |/ _ \ |
-#| (_| | | | | |_| | | |_) | (_| | | | (_| | | |  __/ |
-# \__, |_| |_|\__,_| | .__/ \__,_|_|  \__,_|_|_|\___|_|
-# |___/              |_|                               
-
-sub gnuparallel_generate_scripts {
-
-  my @scripts = ();
-  $cmdi = 1;
-  for $CMD (@_)
-  {
-    my $script = render_serial_script($CMD);
-    my $scriptfn = write_script($cmdi++,$script);
-    chmod 0755, $scriptfn;
-    push @scripts, $scriptfn;
-  }
-
-  return @scripts;
-}
-
-sub gnuparallel_run_scripts {
-
-  # parallel runs a command with different arguments pulled from groups that are separated by :::
-  #
-  # parallel cmd ::: arg1 arg2 arg3
-  #
-  # if no command is given, then each argument is treated as a command and ran
-  #
-  # parallel ::: cmd1 cmd2 cmd3
-  #
-  # if the --files option is given, then the standard output of each command is sent to a file
-  # instead of the screen. however, we don't know the name of this file before hand, parallel
-  # will print it to stdout as they are created.
-  #
-  my $cmd_to_run  = "parallel $opt_handler_options".($opt_output ? "--files" : "" )." ::: ".join(" ", @_);
-
-  if( $opt_dry_run )
-  {
-    print( $cmd_to_run."\n");
-  }
-  else
-  {
-    # we wan to send stdout to files
-    if( $opt_output )
-    {
-      # parallel will print out a list of the files that it sends the stdout to.
-      # we need to get this list and move these files.
-      my @files = `$cmd_to_run`;
-      chomp(@files);
-
-      my $i = 0;
-      for my $file (@files)
-      {
-        $i++;
-
-        # the command ran in each script is printed to stdout, so we can retrieve
-        # it from each stdout file written by parallel
-        my $cmd = "UNKNOWN";
-        open(FILE, "<$file");
-        my @cmd_line = grep(/CMD:/, <FILE>);
-        close(FILE);
-        if( $cmd_line[0] =~ /^CMD:\s(.*)$/ )
-        {
-          $cmd = $1;
-        }
-
-        my $name = generate_name_for_cmd($cmd);
-        my $stdoutfn = sprintf($stdoutfn_tmpl, $name, ${i} );
-        #system("cat $file >> $stdoutfn 2>&1");
-        open(INFILE, "<$file");
-        open(OUTFILE, ">>$stdoutfn");
-        { local $/; print OUTFILE <INFILE>; }
-        close(INFILE);
-        close(OUTFILE);
-      }
-    }
-    else
-    {
-      # we can just run the command
-      system($cmd_to_run)
-    }
-  }
-
-}
-
-sub gnuparallel {
-  my ($args) = @_;
-
-  if( scalar @{$args->{cmds}} == 0 ) {
-    return cmd_exists('parallel');
-  }
-
-  # generate all the scripts first
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = gnuparallel_generate_scripts(@{$args->{cmds}});
-  }
-
-  # now run them
-  gnuparallel_run_scripts(@scripts);
-
-
-}
-
-
-#       _       _         
-#__  __(_) ___ | |__  ___ 
-#\ \/ /| |/ _ \| '_ \/ __|
-# >  < | | (_) | |_) \__ \
-#/_/\_\/ |\___/|_.__/|___/
-#    |__/                 
-
-sub xjobs_generate_scripts {
-  # turns out, we can just use the scripts we would use for gnuparrallel
-  return gnuparallel_generate_scripts(@_);
-}
-
-sub xjobs_run_scripts {
-
-  my $cmd_to_run = "echo '".join("\n", @_)."' | xjobs $opt_handler_options";
-  my $stdoutfn = sprintf($stdoutfn_tmpl, "X", "1" );
-     $cmd_to_run .= "> $stdoutfn" if( $opt_output );
-  if( $opt_dry_run )
-  {
-    print( $cmd_to_run."\n");
-  }
-  else
-  {
-    system($cmd_to_run);
-  }
-
-}
-
-sub xjobs {
-  my ($args) = @_;
-
-  if( scalar @{$args->{cmds}} == 0 ) {
-    return cmd_exists('xjobs');
-  }
-
-  # generate all the scripts first
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = xjobs_generate_scripts(@{$args->{cmds}});
-  }
-
-  # now run them
-  xjobs_run_scripts(@scripts);
-
-
-}
-
-# _     _                      _            
-#| |__ | |_ ___ ___  _ __   __| | ___  _ __ 
-#| '_ \| __/ __/ _ \| '_ \ / _` |/ _ \| '__|
-#| | | | || (_| (_) | | | | (_| | (_) | |   
-#|_| |_|\__\___\___/|_| |_|\__,_|\___/|_|   
-                                           
-
-sub htcondor_generate_scripts {
-  my ($args) = @_;
-
-  my @scripts = ();
-
-
-  # condor allows for the same command to be ran with multiple set of arguments.
-  # we may want to 
-
-  $cmdi = 1;
-  for $CMDANDARGS (@{$args->{cmds}})
-  {
-    my($CMD,$ARGS) = split /\s/, $CMDANDARGS, 2;
-
-    # generate the script that we will submit.
-    my $name   = generate_name_for_cmd($CMDANDARGS);
-    my $script = $run_script_templates{htcondor};
-    $script = read_file($opt_template) if( defined( $opt_template ) );
-
-    $script =~ s/<%SHEBANG%>/$shebang/g;
-    $script =~ s/<%NAME%>/$name/g;
-    $script =~ s/<%SHELL%>/$shell/g;
-    $script =~ s/<%CMD%>/$CMD/g;
-
-    $script .= "\n";
-    $script .= "Arguments = $ARGS" if($ARGS);
-    $script .= "\n";
-    $script .= "Queue";
-    $script .= "\n";
-
-    push @scripts, write_script( $cmdi++, $script );
-
-  }
-
-  return @scripts;
-}
-
-sub htcondor_run_scripts {
-
-  for my $scriptfn (@_)
-  {
-    my $cmd_to_run = "condor_submit $opt_handler_options $scriptfn";
-    system($cmd_to_run     ) if( not $opt_dry_run );
-    print( $cmd_to_run."\n") if(     $opt_dry_run );
-  }
-}
-
-sub htcondor {
-  my ($args) = @_;
-  if( scalar @{$args->{cmds}} == 0 ) {
-    # first of all, the condor_submit command needs to exist
-    my $e = cmd_exists('condor_submit');
-    
-    return 0 if( not $e );
-
-    # the condor_submit command exists
-    return 1;
-  }
-
-  # generate all the scripts first
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = htcondor_generate_scripts($args);
-  }
-
-  # now run them
-  htcondor_run_scripts(@scripts);
-
-  # if the block option is set
-  # block until all jobs have finished
-  if( $opt_block )
-  {
-    # TODO: Figure out how to block!
-  }
-
-}
-
-
-#               _       _ 
-# ___  ___ _ __(_) __ _| |
-#/ __|/ _ \ '__| |/ _` | |
-#\__ \  __/ |  | | (_| | |
-#|___/\___|_|  |_|\__,_|_|
-                         
-sub serial_generate_scripts {
-  my @scripts = ();
-
-  $cmdi = 1;
-  for $CMDANDARGS (@_)
-  {
-    $script = render_serial_script($CMDANDARGS);
-
-    my $scriptfn = write_script($cmdi++,$script);
-    chmod 0755, $scriptfn;
-    push @scripts, $scriptfn;
-
-  }
-
-  return @scripts;
-}
-
-sub serial_run_scripts {
-
-  for $scriptfn (@_)
-  {
-    my $stdoutfn = "_".basename $scriptfn.".o";
-    my $cmd_to_run  = $scriptfn . ($opt_output ? " >> ${stdoutfn}" : "" );
-
-    system($cmd_to_run     ) if( not $opt_dry_run );
-    print( $cmd_to_run."\n") if(     $opt_dry_run );
-  }
-}
-
-sub serial {
-  my ($args) = @_;
-
-  if( scalar @{$args->{cmds}} == 0 ) {
-    return 1; # this one will always work
-  }
-
-  # generate all the scripts first
-  my @scripts = ();
-  if( $opt_args_are_run_scripts )
-  {
-    # if the script names does not contain a relative or absolute path, we need to add one.
-    @scripts = map { s/^([^\/])/.\/$1/; $_ } @{$args->{cmds}};
-  }
-  else
-  {
-    @scripts = serial_generate_scripts(@{$args->{cmds}});
-  }
-
-  # now run them
-  serial_run_scripts(@scripts);
-
-}
-
-
-
-
-
-
-
-
-
-
-my @handlers  = (
-                  { name => "sbatch"       , func => \&sbatch      , help => "submit jobs to a SLURM scheduler" } ,
-                  { name => "qsub"         , func => \&qsub        , help => "submit jobs to a PBS-compliant scheduler" } ,
-                  { name => "htcondor"     , func => \&htcondor    , help => "submit jobs to a condor pool" } ,
-                  { name => "xjobs"        , func => \&xjobs       , help => "run jobs using the xjobs utility" } ,
-                  { name => "gnuparallel"  , func => \&gnuparallel , help => "run jobs using the the gnu parallel script" } ,
-                  { name => "serial"       , func => \&serial      , help => "run jobs one after the other" } ,
-                );
-
-#             _   _               _                     _ _ _             
-#  ___  _ __ | |_(_) ___  _ __   | |__   __ _ _ __   __| | (_)_ __   __ _ 
-# / _ \| '_ \| __| |/ _ \| '_ \  | '_ \ / _` | '_ \ / _` | | | '_ \ / _` |
-#| (_) | |_) | |_| | (_) | | | | | | | | (_| | | | | (_| | | | | | | (_| |
-# \___/| .__/ \__|_|\___/|_| |_| |_| |_|\__,_|_| |_|\__,_|_|_|_| |_|\__, |
-#      |_|                                                          |___/ 
-
-
-our(
-  $opt_help,
-  $opt_manual,
-  $opt_block,
-  $opt_debug,
-  $opt_delimiter,
-  $opt_args_are_run_scripts,
-  $opt_leave_run_scripts,
-  $opt_handler,
-  $opt_handler_options,
-  $opt_list_handlers,
-  $opt_dry_run,
-  $opt_output,
-  $opt_readme,
-  $opt_template,
-  $opt_dont_test_for_handler,
-  $opt_print_template,
-  $opt_verbose,
-  );
-
-$opt_verbose = 0;
-
-if( ! scalar @ARGV )
-{
-  pod2usage(-verbose => 0, -output => \*STDOUT);
-}
-
-GetOptions( "help|h" => \$opt_help,
-            "manual|m" => \$opt_manual,
-            "debug|D" => \$opt_debug,
-            "delimiter|d" => \$opt_delimiter,
-            "block|B" => \$opt_block,
-            "command|C" => \$opt_command,
-            "args-are-run-scripts|F" => \$opt_args_are_run_scripts,
-            "leave-run-scripts|f" => \$opt_leave_run_scripts,
-            "handler|H=s" => \$opt_handler,
-            "handler_options|O=s" => \$opt_handler_options,
-            "list-handlers|l" => \$opt_list_handlers,
-            "dry-run|n" => \$opt_dry_run,
-            "output|o" => \$opt_output,
-            "readme|R" => \$opt_readme,
-            "template|t=s" => \$opt_template,
-            "dont-test-for-handler|T" => \$opt_dont_test_for_handler,
-            "print-template" => \$opt_print_template,
-            "verbose|v+" => \$opt_verbose,
-          ) || pod2usage(-verbose => 2);
-
-# help
-if($opt_help)
-{
-  pod2usage(-verbose => 1);
-}
-if($opt_manual)
-{
-  pod2usage(-verbose => 2);
-}
-if($opt_readme)
-{
-  write_readme();
-  exit(0);
-}
-if($opt_dry_run)
-{
-  print "Dry Run. Will just print commands that would be executed instead of executing them.\n";
-  print "Note that this may not help much if a temporary script is going to be created an ran.\n\n";
-}
-
-$debug         = 1      if ($opt_debug);
-$verbose_level = $opt_verbose;
-$verbose_level = 100    if ($debug);
-$opt_handler_options         = "" unless ($opt_handler_options);
-
-
-if($opt_list_handlers)
-{
-  foreach $hdlr ( @handlers )
-  {
-    print $hdlr->{name}."\t\t- ".$hdlr->{help}."\n";
-  }
-
-  exit(0);
-}
-
-$opt_debug = ' ' if($opt_args_are_run_scripts);
-$arg_delim = $opt_delimiter if($opt_delimiter);
-
-
-
-
-
-#                 _       
-# _ __ ___   __ _(_)_ __  
-#| '_ ` _ \ / _` | | '_ \ 
-#| | | | | | (_| | | | | |
-#|_| |_| |_|\__,_|_|_| |_|
-
-$tempdir = tempdir(CLEANUP => $debug ? 0 : 1) or die "Cannot make temp dir.  Unable to proceed - aborting.";
-                         
-# get array of commands that need to be ran
-@CMDS = split( /\s*$arg_delim\s*/, join(' ', @ARGV) );
-
-# if the -C option was given, then we want to prepend its argument to all commands
-if( $opt_command )
-{
-  @CMDS = map { $opt_command." ".$_} @CMDS;
-}
-
-# check if some stdin is being piped in
-if( ! -t STDIN)
-{
-  # if so, pass each item in stdin to all commands as an argument
-  foreach $ARG (<STDIN>)
-  {
-    push @NEWCMDS, map { $_." ".$ARG } @CMDS;
-  }
-  @CMDS = @NEWCMDS;
-}
-
-
-
-# try to figure out what handler to use
-undef $handler;
-my $handler_args = [];
-if($opt_handler)
-{
-  my ($name,$args) = split /:/, $opt_handler;
-  @handler_args = split /,/,$args if($args);
-  for $hdlr (@handlers)
-  {
-    if( $hdlr->{name} =~ /$name/ )
-    {
-      $handler = $hdlr
-    }
-  }
-
-  if( not defined($handler) )
-  {
-    print "ERROR: '$name' handler not found. Did you misspell it? Use -l option to see a list of supported handlers";
-    exit(1);
-  }
-}
-else
-{
-  foreach $hdlr ( @handlers )
-  {
-     message(2, "Checking '$hdlr->{name}' handler..." );
-     if( $hdlr->{'func'}->({cmds => []}) )
-     {
-       message(2, "valid\n"  );
-       $handler = $hdlr;
-       last;
-     }
-     message(2, "invalid\n"  );
-  }
-}
-
-if( not defined($handler) )
-{
-  print "ERROR: no handler was found. Something is wrong\n";
-  exit(1);
-}
-
-message(1, "Running with '$handler->{name}' handler\n");
-if( $debug )
-{
-  print "running the following commands:\n";
-  for my $CMD (@CMDS)
-  {
-    print "\t'$CMD'\n"
-  }
-}
-
-if( $opt_print_template )
-{
-  print $run_script_templates{$handler->{name}};
-  exit(0)
-}
-
-$handler->{func}->({args => \@handler_args, cmds => \@CMDS});
-
-if( $opt_leave_run_scripts )
-{
-  # all scripts will be in tempdir and have the script_prefix.
-  opendir(DIR,$tempdir);
-  my @files = grep(/^${script_prefix}.*${script_suffix}$/, readdir(DIR) );
-  foreach my $file (@files) { copy("${tempdir}/${file}", "${file}"); chmod 0755, ${file}; }
-  closedir(DIR);
-}
-
-
-exit(0);
-
-=head1 NAME
-
-run - Quickly queue and run jobs from the command line.
-
-VERSION: 0.3.0
-
-=head1 DESCRIPTION
-
-C<run> is a perl script that will run a set of commands.
-It is primarily useful for running commands that are expected to run for a long
-time, such as physics simulations.  C<run> uses "handlers" to actually run the
-commands, and tries to automatically select the best handler to use to complete
-the runs as quickly as possible. For example, if you are working on a cluster
-and the C<qsub> command exists, C<run> will create submission scripts and submit
-them to the scheduler.  If the C<qsub> command does not exist, then other handlers
-are checked. For example, if the C<parallel> (gnu parallel) or C<xjobs> commands
-are found, they can be used to run all commands in parallel.
-
-If all other handlers fail, C<run> will fall back to just running each command
-in serial, one after the other.  This turns out to still be useful, because if
-you have a set of simulations that you need to perform, you can use C<run> to
-automatically run each simulation after one has completed.
-
-All handlers will first create a script wrapper for each command to run and
-then run this script.  This is done so that extra information can be embedded
-in the command output, such as a time stamp for timing data.
-
-
-=head2 Current Handlers
-
-=over
-
-=item C<sbatch>
-
-This handler uses the C<sbatch> command. C<sbatch> is used to submit jobs to
-an HPC cluster using the Slurm workload manager, which is become popular
-in recent years. The C<sbatch> handler will automatically
-create a submission script for each job and subit the scripts to the scheduler.
-This is handy if you want to just quickly submit a basic job that does not
-require a complex submission script.
-
-
-=item C<qsub>
-
-This handler uses the C<qsub> command. C<qsub> is used to submit jobs to several HPC
-schedulers including PBS, MOAB, and SGE. The C<qsub> handler will automatically
-create a submission script for each job and subit the scripts to the scheduler.
-This is handy if you want to just quickly submit a basic job that does not
-require a complex submission script.
-
-=item C<qsub>
-
-This handler uses the C<condor_submit> command to submit jobs to an htcondor
-pool. htcondor is a high-throughput computing framework used to manage a set (pool)
-of desktop computers and run jobs on idle machines.
-See https://research.cs.wisc.edu/htcondor/ for more details.
-
-=item C<gnuparallel>
-
-This handler uses the C<parallel> command, from the gnuparallel project. C<parallel> is a
-perl script that runs multiple jobs in parallel and even supports running jobs on remote computers
-(not supported by run). It attempts to work as a parallel version of C<xargs>.
-
-=item C<xjobs>
-
-This handler uses the C<xjobs> command. C<xjobs> is a small C program written by Thomas Maier-Komer that
-that a command multiple times with different arguments in parallel.
-It strives to be a parallel version of C<xargs>.
-
-=item C<serial>
-
-This handler just runs each job directly, one after the other.
-
-=back
-
-=head2 Possible Future Handlers
-
-=over
-
-=item C<pexec>
-
-=back
-
-Note that C<run> does not do load balancing. Each handler is given the list of commands to run, and they are responsible
-for managing the system workload.
-
-=head1 USAGE
-
-  > run cmd1 [args] [: cmd2 [args] [...] ]
-
-  If standard input is piped in from another command, then `run` will read
-  arguments from stdin and run each command with each argumnet.
-
-  > command that produces list of arguents | run cmd1 [: cmd2 [...] ]
-
-=head2 OPTIONS:
-
-=over
-
-=item C<--help|-h> 
-
-This help message.
-
-=item C<--manual|-m> 
-
-Print full manual.
-
-=item C<--verbose|v>
-
-Increase the verbose level by 1.
-  
-=item C<--dry-run|-n>
-
-Dry run. Don't execute handler commands, just print them to stdout.
-
-=item C<--handler|-H HANDLER>
-
-Specify the HANDLER to use.
-
-=item C<--handler-opts|-O HANDLER_OPTIONS>
-
-Pass a list of options to the handler command.
-
-=item C<--list-handlers|-l>
-
-List supported handlers.
-
-=item C<--command|-C CMD>
-
-Prepend CMD to all commands before running.
-
-=item C<--delimiter|-d DEL>
-
-Use DEL to delimiter commands (default ':').
-
-=item C<--output|-o>
-
-Send standard output to files. note that what happens here depends on the handler. Some
-handlers create a separate file for each command ran, some put all the stdout of all commands
-in the same file, while others ignore this option all together and always put stdout in files.
-
-=item C<--leave-run-scripts|-f>
-
-Leave the generated wrapper script in the current working directory.
-
-=item C<--args-are-run-scripts|-F>
-
-Treat all arguments as the names of already existing wrapper scripts and run directly without generating new wrapper scripts.
-
-=item C<--block|-B>
-
-Block until all jobs have finished running (only effects qsub handler).
-
-=item C<--template|-t FILENAME>
-
-Use FILENAME as template for the run script. The template script will be "rendered"
-by replacing a few special strings. Your script may all, or none, of these strings:
-
-=item C<--readme|-R>
-
-Generate a README.pod file.
-
-<%CMD%>    The command line (command plus arguments) that is to be run.
-<%SCRIPT%> The set of commands that C<run> would execute. These include date
-           commands before and after the actual command to be run.
-<%NAME%>   A name string generated by run. For short commands, this is just the command
-           line with spaces ' ' replaced by underscores. For long commands, this is a
-           hash of the command line.
-
-=item C<--dont-test-for-handler|-T>
-
-Do not test scheduler before submitting jobs (qsub handler only).
-
-=item C<--print-template>
-
-Print the template script and exit.
-
-=back
-
-=head1 EXAMPLES
-
-run 3 scripts
-
-    > run script1.sh : script2.sh : script3.sh
-
-run 3 BTEC runs
-
-    > run BTECthermal config1.btec : BTECthermal config2.btec : BTECthermal config3.btec
-
-or, using the -C option
-
-    > run -C BTECthermal config1.btec : config2.btec : config3.btec
-
-or, using the stdin
-
-    > echo config{1,2,3}.btec | run BTECthermal
-
-run BTEC for all config files in the current directory
-
-    > run -C BTECthermal -d' ' config*.btec
-
-or, using the stdin
-
-    > echo config*.btec | run BTECthermal
-
-run 3 scripts using the gnuparallel handler
-
-    > run -H gnuparallel script1.sh : script2.sh : script3.sh
-
-first create run scripts for three commands, then run these scripts.
-
-    > run -f cmd1 : cmd2 : cmd3
-    > run -F run_script-*.sh
-
-get a list of all handlers
-
-    > run -l
-
-=head1 INSTALLATION
-
-C<run> is a single perl script. To install it, just place it somewhere in your PATH.
-
-=head2 DEPENDENCIES
-
-C<run> only uses a few standard Perl modules. These modules should be installed with Perl
-and it should not be necessary to install any additional modules.
-
-In addition to this, a few standard Linux commands are used.
-
-=head1 LICENSE
-
-The MIT License (MIT)
-
-Copyright (c) 2015-present CD Clark III
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-=cut
 

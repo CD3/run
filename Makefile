@@ -1,10 +1,8 @@
 DESTDIR=${HOME}
 
 docs:
-	podselect run > README.pod
-	podselect -section LICENSE run > LICENSE.pod
+	./run -m > README.md
 
 install:
 	mkdir -p $(DESTDIR)/bin
 	install run $(DESTDIR)/bin
-	install run-util $(DESTDIR)/bin

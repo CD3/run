@@ -1,4 +1,4 @@
-=head1 LICENSE
+# LICENSE
 
 The MIT License (MIT)
 
