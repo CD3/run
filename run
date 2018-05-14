@@ -5,6 +5,8 @@ run - Quickly queue and run jobs from the command line.
 
 # VERSION: 0.4.0
 
+Note: Before version 0.4.0, `run` was a Perl script. For version 0.4.0, `run` was completely rewritten in Python.
+
 # DESCRIPTION
 
   `run` is a perl script that will run a set of commands.

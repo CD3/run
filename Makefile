@@ -1,5 +1,7 @@
 DESTDIR=${HOME}
 
+dummy:
+
 docs:
 	./run -m > README.md
 
