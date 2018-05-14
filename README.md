@@ -2,7 +2,7 @@
 # NAME
 run - Quickly queue and run jobs from the command line.
 
-# VERSION: 0.3.0
+# VERSION: 0.4.0
 
 # DESCRIPTION
 
