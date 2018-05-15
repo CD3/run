@@ -121,6 +121,7 @@ Note: Before version 0.4.0, `run` was a Perl script. For version 0.4.0, `run` wa
 """
 
 from __future__ import print_function
+from __future__ import unicode_literals
 import subprocess
 import os, sys, inspect, logging, shutil, re, json, hashlib, tempfile, stat, io
 from argparse import ArgumentParser
