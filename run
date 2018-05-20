@@ -319,7 +319,7 @@ class xJobsHandler(SerialHandler):
     return shutil.which("xjobs") is not None
 
   def run(self):
-    run("xjobs", input=" ".join(self.submit_scripts))
+    run("xjobs", input="\n".join(self.submit_scripts))
 
 
 class GnuParallelHandler(SerialHandler):
