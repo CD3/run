@@ -1,9 +1,9 @@
 from distutils.core import setup
 setup(
-    name = 'run',
+    name = 'qrun',
     version = '0.5.0',
     license='MIT',
-    description = 'A small utility for multiple jobs in parallel or series.',
+    description = 'A small utility for running multiple jobs in parallel or series.',
     author = 'CD Clark III',
     author_email = 'clifton.clark@gmail.com',
     url = 'https://github.com/CD3/run',
