@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 setup(
     name = 'qrun',
-    version = '0.5.0',
+    version = '0.5.1',
     license='MIT',
     description = 'A small utility for running multiple jobs in parallel or series.',
     author = 'CD Clark III',
