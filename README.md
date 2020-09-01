@@ -1,26 +1,26 @@
 
 # NAME
-run - Quickly queue and run jobs from the command line.
+qrun - Quickly queue and run jobs from the command line.
 
 # VERSION: 0.4.0
 
-Note: Before version 0.4.0, `run` was a Perl script. For version 0.4.0, `run` was completely rewritten in Python.
+Note: Before version 0.4.0, `qrun` was a Perl script. For version 0.4.0, `qrun` was completely rewritten in Python.
 
 # DESCRIPTION
 
-  `run` is a perl script that will run a set of commands.
+  `qrun` is a perl script that will run a set of commands.
   It is primarily useful for running commands that are expected to run for a long
-  time, such as physics simulations.  `run` uses "handlers" to actually run the
+  time, such as physics simulations.  `qrun` uses "handlers" to actually run the
   commands, and tries to automatically select the best handler to use to complete
   the runs as quickly as possible. For example, if you are working on a cluster
-  and the `qsub` command exists, `run` will create submission scripts and submit
+  and the `qsub` command exists, `qrun` will create submission scripts and submit
   them to the scheduler.  If the `qsub` command does not exist, then other handlers
   are checked. For example, if the `parallel` (gnu parallel) or `xjobs` commands
   are found, they can be used to run all commands in parallel.
 
-  If all other handlers fail, `run` will fall back to just running each command
+  If all other handlers fail, `qrun` will fall back to just running each command
   in serial, one after the other.  This turns out to still be useful, because if
-  you have a set of simulations that you need to perform, you can use `run` to
+  you have a set of simulations that you need to perform, you can use `qrun` to
   automatically run each simulation after one has completed.
 
   All handlers will first create a script wrapper for each command to run and
@@ -63,35 +63,37 @@ Note: Before version 0.4.0, `run` was a Perl script. For version 0.4.0, `run` wa
   - `pbs` a common (maybe the most common) scheduler interface used on clusters.
 
 
-  Note that `run` does not do load balancing. Each handler is given the list of commands to run, and they are responsible
+  Note that `qrun` does not do load balancing. Each handler is given the list of commands to run, and they are responsible
   for managing the system workload.
 
 # EXAMPLES
 
   run 3 scripts
 
-      > run script1.sh : script2.sh : script3.sh
+      > qrun script1.sh : script2.sh : script3.sh
 
   run 3 BTEC runs
 
-      > run -C BTECthermal config1.btec : BTECthermal config2.btec : BTECthermal config3.btec
+      > qrun -C BTECthermal config1.btec : BTECthermal config2.btec : BTECthermal config3.btec
 
   run BTEC for all config files in the current directory
 
-      > run -C BTECthermal -d' ' config*.btec
+      > qrun -C BTECthermal -d' ' config*.btec
 
   run 3 scripts using the gnuparallel handler
 
-      > run -H gnuparallel script1.sh : script2.sh : script3.sh
+      > qrun -H gnuparallel script1.sh : script2.sh : script3.sh
 
   get a list of all handlers
 
-      > run -l
+      > qrun -l
 
 # INSTALLATION
 
-  `run` is a single python script that uses only standard library modules.
-  To install it, just place it somewhere in your PATH.
+  `qrun` is available on PyPi
+  ```
+  $ pip install qrun
+  ```
 
 
 # LICENSE
