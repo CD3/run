@@ -65,7 +65,7 @@ def cmd_time(arguments):
 funcmembers = [ func for func in inspect.getmembers(sys.modules[__name__], inspect.isfunction) if func[0].lower().startswith("cmd_") ]
 commands = { k.lower().replace("cmd_",""):v for (k,v) in funcmembers}
 
-if __name__ == "__main__":
+def main():
   parser = ArgumentParser(description="A tool to perform various tasks related to running jobs.")
 
   parser.add_argument("command",
@@ -117,3 +117,5 @@ if __name__ == "__main__":
 
   commands[cmd_args[0]]( cmd_args[1:] )
 
+if __name__ == "__main__":
+  main()
