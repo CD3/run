@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup, find_packages
 setup(
     name = 'qrun',
     version = '0.5.0',
@@ -14,6 +14,7 @@ setup(
       "Operating System :: OS Independent",
       ],
     python_requires='>=3.0',
+    packages=find_packages(),
     entry_points='''
       [console_scripts]
       qrun=qrun.scripts:qrun
