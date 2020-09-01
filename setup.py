@@ -1,7 +1,7 @@
 from distutils.core import setup
 setup(
     name = 'run',
-    version = '0.0',
+    version = '0.5.0',
     license='MIT',
     description = 'A small utility for multiple jobs in parallel or series.',
     author = 'CD Clark III',
