@@ -1,6 +1,6 @@
 [project]
 name = "qrun"
-version = "0.5.1"
+version = "0.6.0"
 description = "A small utility for running multiple jobs in parallel or series."
 authors = [{name = "CD Clark III", email = "clifton.clark@gmail.com"}]
 dependencies = []
@@ -9,7 +9,7 @@ requires-python = ">= 3.8"
 
 [project.scripts]
 "qrun" = "qrun.scripts:qrun"
-"qrun-util" = "qrun.scripts:qrun_util"
+# "qrun-util" = "qrun.scripts:qrun_util"
 
 [build-system]
 requires = ["hatchling"]
