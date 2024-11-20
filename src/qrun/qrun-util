@@ -11,7 +11,7 @@ import pyparsing as pp
 from datetime import datetime
 
 def cmd_time(arguments):
-  parser = ArgumentParser(description="A tool to perform various tasks related to running jobs.")
+  parser = ArgumentParser(description="Extract timing information from log files.")
 
   parser.add_argument("file",
                       action="store",

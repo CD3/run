@@ -8,7 +8,7 @@ Note: Before version 0.4.0, `qrun` was a Perl script. For version 0.4.0, `qrun` 
 
 # DESCRIPTION
 
-  `qrun` is a perl script that will run a set of commands.
+  `qrun` is a Python script that will run a set of commands.
   It is primarily useful for running commands that are expected to run for a long
   time, such as physics simulations.  `qrun` uses "handlers" to actually run the
   commands, and tries to automatically select the best handler to use to complete
